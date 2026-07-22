@@ -1,0 +1,32 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      MONGO_URI: mongodb://mongo:27017/instructor_evaluations
+      MONGO_MEMORY_FALLBACK: false
+    depends_on:
+      - mongo
+    ports:
+      - "5000:5000"
+
+  web:
+    build:
+      context: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  mongo_data:

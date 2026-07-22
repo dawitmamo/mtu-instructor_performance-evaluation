@@ -1,0 +1,26 @@
+import { Router } from 'express';
+import { authenticate, authorize } from '../middleware/auth.js';
+import { audit } from '../middleware/audit.js';
+import { validate } from '../middleware/validate.js';
+import { assignmentSchema, courseSchema, departmentSchema, examCommitteeSchema, semesterSchema, userUpdateSchema } from '../validators/schemas.js';
+import { createAssignment, createCourse, createDepartment, createSemester, listAssignments, listCourses, listDepartments, listExamCommittees, listSemesters, listUsers, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser, upsertExamCommittee } from '../controllers/catalogController.js';
+
+export const catalogRoutes = Router();
+catalogRoutes.use(authenticate);
+catalogRoutes.get('/departments', listDepartments);
+catalogRoutes.get('/users', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), listUsers);
+catalogRoutes.post('/departments', authorize('SUPER_ADMIN'), validate(departmentSchema), audit('DEPARTMENT_CREATED'), createDepartment);
+catalogRoutes.put('/departments/:id', authorize('SUPER_ADMIN'), validate(departmentSchema), audit('DEPARTMENT_UPDATED'), updateDepartment);
+catalogRoutes.get('/semesters', listSemesters);
+catalogRoutes.post('/semesters', authorize('SUPER_ADMIN', 'HOD'), validate(semesterSchema), audit('SEMESTER_CREATED'), createSemester);
+catalogRoutes.put('/semesters/:id', authorize('SUPER_ADMIN', 'HOD'), validate(semesterSchema), audit('SEMESTER_UPDATED'), updateSemester);
+catalogRoutes.get('/courses', listCourses);
+catalogRoutes.post('/courses', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(courseSchema), audit('COURSE_CREATED'), createCourse);
+catalogRoutes.put('/courses/:id', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(courseSchema), audit('COURSE_UPDATED'), updateCourse);
+catalogRoutes.get('/assignments', listAssignments);
+catalogRoutes.post('/assignments', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(assignmentSchema), audit('ASSIGNMENT_CREATED'), createAssignment);
+catalogRoutes.put('/assignments/:id', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(assignmentSchema), audit('ASSIGNMENT_UPDATED'), updateAssignment);
+catalogRoutes.put('/users/:id', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(userUpdateSchema), audit('USER_UPDATED'), updateUser);
+catalogRoutes.get('/exam-committees', authorize('HOD'), listExamCommittees);
+catalogRoutes.post('/exam-committees', authorize('HOD'), validate(examCommitteeSchema), audit('EXAM_COMMITTEE_UPSERTED'), upsertExamCommittee);
+catalogRoutes.post('/exam-committee', authorize('HOD'), validate(examCommitteeSchema), audit('EXAM_COMMITTEE_UPSERTED'), upsertExamCommittee);

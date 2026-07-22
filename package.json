@@ -1,0 +1,27 @@
+{
+    "name": "university-instructor-performance-evaluation-system",
+    "version": "1.0.0",
+    "private": true,
+    "engines": {
+        "node": ">=20.19.0"
+    },
+    "description": "MERN stack university instructor performance evaluation system.",
+    "workspaces": [
+        "backend",
+        "frontend"
+    ],
+    "scripts": {
+        "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+        "build": "npm run build --workspace frontend",
+        "test": "npm test --workspace backend",
+        "seed": "npm run seed --workspace backend",
+        "seed:templates": "npm run seed:templates --workspace backend",
+        "seed:samples": "npm run seed:samples --workspace backend",
+        "seed:ece": "npm run seed:ece --workspace backend",
+        "audit:data": "node backend/src/auditData.js",
+        "migrate:emails": "node backend/src/migrateEmailDomain.js"
+    },
+    "devDependencies": {
+        "concurrently": "^9.0.1"
+    }
+}
