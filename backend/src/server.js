@@ -1,13 +1,20 @@
 import { createApp } from './app.js';
 import { connectDb, disconnectDb } from './config/db.js';
-import { env } from './config/env.js';
+import { env, validateRuntimeConfig } from './config/env.js';
 import { seedDemoData } from './services/demoData.js';
+import { reconcileCommitteeMemberships } from './services/committeeMembership.js';
+import { ensureEvaluationIndexes } from './services/evaluationIndexes.js';
+import { ensureNotificationIndexes } from './services/notificationIndexes.js';
 
+validateRuntimeConfig();
 await connectDb();
+await ensureEvaluationIndexes();
+await ensureNotificationIndexes();
 if (env.nodeEnv === 'development' && env.seedDemoData) {
   const seeded = await seedDemoData();
-  if (seeded) console.log('Demo data created. Sign in with admin@mtu.edu.et / Password123!');
+  if (seeded) console.log('Demo data created. Sign in with admin@mtu.edu.et / admin12345');
 }
+await reconcileCommitteeMemberships();
 const app = createApp();
 const server = app.listen(env.port, () => console.log(`API listening on port ${env.port}`));
 

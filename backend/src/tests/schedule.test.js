@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createApp } from '../app.js';
 import { connectDb, disconnectDb } from '../config/db.js';
 import { Department } from '../models/Department.js';
+import { ExamCommittee } from '../models/ExamCommittee.js';
 import { Schedule } from '../models/Schedule.js';
 import { Semester } from '../models/Semester.js';
 import { User } from '../models/User.js';
@@ -16,6 +17,7 @@ let semester;
 let hod;
 let courseCommittee;
 let examCommittee;
+let thirdCommitteeMember;
 let instructor;
 let student;
 let foreignStudent;
@@ -51,34 +53,42 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Schedule.deleteMany({}), User.deleteMany({}), Department.deleteMany({}), Semester.deleteMany({})]);
+  await Promise.all([Schedule.deleteMany({}), ExamCommittee.deleteMany({}), User.deleteMany({}), Department.deleteMany({}), Semester.deleteMany({})]);
   [department, foreignDepartment] = await Department.create([
     { name: 'Electrical and Computer Engineering', code: 'ECE', faculty: 'Engineering' },
     { name: 'Civil Engineering', code: 'CE', faculty: 'Engineering' }
   ]);
   semester = await Semester.create({ name: 'Second Semester', academicYear: '2026/2027', startsAt: new Date('2027-02-01'), endsAt: new Date('2027-06-30'), status: 'OPEN' });
   const passwordHash = await User.hashPassword('Password123!');
-  [hod, courseCommittee, examCommittee, instructor, student, foreignStudent] = await User.create([
+  [hod, courseCommittee, examCommittee, thirdCommitteeMember, instructor, student, foreignStudent] = await User.create([
     { firstName: 'Department', lastName: 'Head', email: 'schedule.hod@mtu.edu.et', passwordHash, role: 'HOD', department: department._id },
-    { firstName: 'Course', lastName: 'Committee', email: 'schedule.course@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_COMMITTEE'], department: department._id, academicStream: 'COMPUTER_ENGINEERING' },
-    { firstName: 'Exam', lastName: 'Committee', email: 'schedule.exam@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['EXAM_COMMITTEE'], department: department._id, academicStream: 'POWER_ENGINEERING' },
+    { firstName: 'Course', lastName: 'Committee', email: 'schedule.course@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id, academicStream: 'COMPUTER_ENGINEERING' },
+    { firstName: 'Exam', lastName: 'Committee', email: 'schedule.exam@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id, academicStream: 'POWER_ENGINEERING' },
+    { firstName: 'Third', lastName: 'Committee', email: 'schedule.third@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, academicStream: 'ELECTRONICS_COMMUNICATION_ENGINEERING' },
     { firstName: 'Regular', lastName: 'Instructor', email: 'schedule.instructor@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, academicStream: 'CONTROL_ENGINEERING' },
     { firstName: 'Department', lastName: 'Student', email: 'schedule.student@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'ECE-SCH-1', yearLevel: 3 },
     { firstName: 'Foreign', lastName: 'Student', email: 'schedule.foreign@mtu.edu.et', passwordHash, role: 'STUDENT', department: foreignDepartment._id, studentNumber: 'CE-SCH-1' }
   ]);
+  await ExamCommittee.create({
+    department: department._id,
+    semester: semester._id,
+    members: [courseCommittee._id, examCommittee._id, thirdCommitteeMember._id],
+    chair: courseCommittee._id,
+    appointedBy: hod._id
+  });
 });
 
-test('HOD, Course Committee, and Exam Committee can prepare or upload department schedules', async () => {
+test('HOD and unified Course and Exam Committee members can prepare or upload department schedules', async () => {
   const hodUpload = await scheduleRequest(hod, { title: 'HOD Exam Schedule', description: '', scheduleType: 'EXAM' })
     .attach('file', Buffer.from('%PDF-1.4 schedule'), { filename: 'exam-schedule.pdf', contentType: 'application/pdf' })
     .expect(201);
   expect(hodUpload.body.schedule.fileName).toBe('exam-schedule.pdf');
 
-  await scheduleRequest(courseCommittee, { title: 'Course Committee Schedule' })
+  await scheduleRequest(courseCommittee, { title: 'Unified Committee Class Schedule' })
     .attach('file', Buffer.from('day,time,course\nMonday,08:00,ECE201'), { filename: 'class-schedule.csv', contentType: 'text/csv' })
     .expect(201);
 
-  await scheduleRequest(examCommittee, { title: 'Exam Committee Schedule', scheduleType: 'COMBINED' }).expect(201);
+  await scheduleRequest(examCommittee, { title: 'Unified Committee Exam Schedule', scheduleType: 'COMBINED' }).expect(201);
   await scheduleRequest(instructor, { title: 'Unauthorized Schedule' }).expect(403);
   await scheduleRequest(hod, { title: 'Foreign Schedule', department: foreignDepartment.id }).expect(403);
   expect(await Schedule.countDocuments()).toBe(3);

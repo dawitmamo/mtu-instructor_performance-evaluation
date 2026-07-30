@@ -40,7 +40,6 @@ function QuestionList({ rows, scale, answers, setAnswers }) {
 export function EvaluationForm({ courses, onSubmitted }) {
   const [template, setTemplate] = useState(null);
   const [assignment, setAssignment] = useState(courses.find((item) => !item.submitted)?.assignmentId || '');
-  const [evaluationKey, setEvaluationKey] = useState('');
   const [comment, setComment] = useState('');
   const [answers, setAnswers] = useState({});
   const [message, setMessage] = useState('');
@@ -56,11 +55,10 @@ export function EvaluationForm({ courses, onSubmitted }) {
     event.preventDefault(); setError('');
     if (rows.some((_, index) => !isAnswered(answers[index]))) { setError('Please score every question or mark it NA.'); return; }
     try {
-      const result = await submitStudentEvaluation({ assignment, evaluationKey, template: template?._id, responses: buildResponses(rows, answers), anonymousComment: comment });
+      const result = await submitStudentEvaluation({ assignment, template: template?._id, responses: buildResponses(rows, answers), anonymousComment: comment });
       const nextAssignment = courses.find((item) => !item.submitted && item.assignmentId !== assignment)?.assignmentId || '';
       setMessage(result.message);
       setAssignment(nextAssignment);
-      setEvaluationKey('');
       setComment('');
       setAnswers({});
       await onSubmitted?.();
@@ -73,10 +71,7 @@ export function EvaluationForm({ courses, onSubmitted }) {
     {message && <div className='submitted-state'><CheckCircle2 size={36} /><strong>{message}</strong><span>Responses are locked after submission.</span></div>}
     {assignment ?
       <form onSubmit={submit}>
-        <div className='key-row'>
-          <label><span>Course</span><select value={assignment} onChange={(event) => setAssignment(event.target.value)} required>{courses.map((item) => <option value={item.assignmentId} key={item.assignmentId} disabled={item.submitted}>{item.course.code} - {item.course.title}{item.submitted ? ' (submitted)' : ''}</option>)}</select></label>
-          <label><span>Evaluation key</span><input value={evaluationKey} onChange={(event) => setEvaluationKey(event.target.value)} required minLength={8} placeholder='Enter secure key' /></label>
-        </div>
+        <label><span>Instructor and course</span><select value={assignment} onChange={(event) => { setAssignment(event.target.value); setComment(''); setAnswers({}); setMessage(''); setError(''); }} required>{courses.map((item) => <option value={item.assignmentId} key={item.assignmentId} disabled={item.submitted}>{item.instructor?.firstName} {item.instructor?.lastName} - {item.course.code}: {item.course.title}{item.submitted ? ' (submitted)' : ''}</option>)}</select></label>
         <label><span>Anonymous comment</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder='Optional comment' rows={3} /></label>
         {error && <div className='error-message'>{error}</div>}
         <QuestionList rows={rows} scale={template?.scale} answers={answers} setAnswers={setAnswers} />
@@ -121,9 +116,7 @@ export function StaffEvaluationForm({ kind, title, onSubmitted }) {
     };
     try {
       const result = kind === 'HOD' ? await submitHodEvaluation(payload) : await submitPeerEvaluation(payload);
-      const remainingTargets = targets.filter((target) =>
-        !(target.instructor?._id === selectedTarget.instructor?._id && target.semester?._id === selectedTarget.semester?._id)
-      );
+      const remainingTargets = targets.filter((target) => target._id !== selectedTarget._id);
       setMessage(result.message);
       setTargets(remainingTargets);
       setTargetId(remainingTargets[0]?._id || '');
@@ -138,7 +131,7 @@ export function StaffEvaluationForm({ kind, title, onSubmitted }) {
     {message && <div className='submitted-state'><CheckCircle2 size={36} /><strong>{message}</strong><span>Responses are locked after submission.</span></div>}
     {targets.length ?
       <form onSubmit={submit}>
-        <label><span>Instructor and course</span><select value={targetId} onChange={(event) => setTargetId(event.target.value)} required disabled={!targets.length}>{targets.map((target) => <option value={target._id} key={target._id}>{target.instructor?.firstName} {target.instructor?.lastName} - {target.course?.code} ({target.semester?.name})</option>)}</select></label>
+        <label><span>Instructor and course</span><select value={targetId} onChange={(event) => { setTargetId(event.target.value); setComment(''); setAnswers({}); setMessage(''); setError(''); }} required disabled={!targets.length}>{targets.map((target) => <option value={target._id} key={target._id}>{target.instructor?.firstName} {target.instructor?.lastName} - {target.course?.code}: {target.course?.title} ({target.semester?.name})</option>)}</select></label>
         {!targets.length && !error && <div className='empty-state'>No published evaluation targets are available.</div>}
         <label><span>Comment</span><textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder='Optional comment' rows={3} /></label>
         {error && <div className='error-message'>{error}</div>}

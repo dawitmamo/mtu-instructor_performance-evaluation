@@ -21,5 +21,24 @@ export const env = {
   accessTokenTtl: process.env.ACCESS_TOKEN_TTL || '15m',
   refreshTokenTtl: process.env.REFRESH_TOKEN_TTL || '7d',
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-  mailFrom: process.env.MAIL_FROM || 'no-reply@university.example'
+  googleOAuthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
+  googleOAuthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
+  googleOAuthCallbackUrl: process.env.GOOGLE_OAUTH_CALLBACK_URL || 'http://localhost:5000/api/auth/google/callback',
+  googleOAuthAllowedDomain: process.env.GOOGLE_OAUTH_ALLOWED_DOMAIN || 'mtu.edu.et'
 };
+
+export function validateRuntimeConfig(config = env) {
+  if (config.nodeEnv !== 'production') return;
+
+  const weakSecrets = [
+    ['JWT_ACCESS_SECRET', config.jwtAccessSecret],
+    ['JWT_REFRESH_SECRET', config.jwtRefreshSecret]
+  ].filter(([, value]) => !value || value.length < 32 || /change-me|change-this|before-production|replace-with|development|^dev-/i.test(value));
+
+  if (weakSecrets.length) {
+    throw new Error(`${weakSecrets.map(([name]) => name).join(' and ')} must use unique random values of at least 32 characters in production`);
+  }
+  if (config.jwtAccessSecret === config.jwtRefreshSecret) {
+    throw new Error('JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different in production');
+  }
+}

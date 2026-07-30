@@ -39,8 +39,7 @@ export const Evaluation = mongoose.model('Evaluation', evaluationSchema);
 export const StudentEvaluation = Evaluation.discriminator(
   'STUDENT',
   new mongoose.Schema({
-    student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, select: false },
-    evaluationKey: { type: mongoose.Schema.Types.ObjectId, ref: 'EvaluationKey', required: true }
+    student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, select: false }
   })
 );
 
@@ -53,7 +52,7 @@ export const PeerEvaluation = Evaluation.discriminator(
   })
 );
 
-PeerEvaluation.schema.index({ evaluator: 1, instructor: 1, semester: 1 }, { unique: true });
+PeerEvaluation.schema.index({ evaluator: 1, assignment: 1 }, { unique: true, name: 'unique_peer_evaluator_assignment' });
 
 export const HodEvaluation = Evaluation.discriminator(
   'HOD',
@@ -62,4 +61,4 @@ export const HodEvaluation = Evaluation.discriminator(
   })
 );
 
-HodEvaluation.schema.index({ evaluator: 1, instructor: 1, semester: 1 }, { unique: true });
+HodEvaluation.schema.index({ evaluator: 1, assignment: 1 }, { unique: true, name: 'unique_hod_evaluator_assignment' });

@@ -4,6 +4,7 @@ import { createApp } from '../app.js';
 import { connectDb, disconnectDb } from '../config/db.js';
 import { ACADEMIC_STREAMS } from '../constants/academicStreams.js';
 import { Department } from '../models/Department.js';
+import { ExamCommittee } from '../models/ExamCommittee.js';
 import { Semester } from '../models/Semester.js';
 import { StreamPreference } from '../models/StreamPreference.js';
 import { StreamSelectionRound } from '../models/StreamSelectionRound.js';
@@ -17,6 +18,7 @@ let semester;
 let hod;
 let examMember;
 let courseMember;
+let thirdMember;
 let students;
 
 function auth(user) {
@@ -37,6 +39,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await Promise.all([
     User.deleteMany({}),
+    ExamCommittee.deleteMany({}),
     Department.deleteMany({}),
     Semester.deleteMany({}),
     StreamPreference.deleteMany({}),
@@ -52,11 +55,19 @@ beforeEach(async () => {
     status: 'OPEN'
   });
   const passwordHash = await User.hashPassword('Password123!');
-  [hod, examMember, courseMember] = await User.create([
+  [hod, examMember, courseMember, thirdMember] = await User.create([
     { firstName: 'Department', lastName: 'Head', email: 'hod.stream@mtu.edu.et', passwordHash, role: 'HOD', department: department._id },
-    { firstName: 'Exam', lastName: 'Member', email: 'exam.stream@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['EXAM_COMMITTEE'], department: department._id },
-    { firstName: 'Course', lastName: 'Member', email: 'course.stream@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_COMMITTEE'], department: department._id }
+    { firstName: 'Exam', lastName: 'Member', email: 'exam.stream@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id },
+    { firstName: 'Course', lastName: 'Member', email: 'course.stream@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id },
+    { firstName: 'Third', lastName: 'Member', email: 'third.stream@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id }
   ]);
+  await ExamCommittee.create({
+    department: department._id,
+    semester: semester._id,
+    members: [examMember._id, courseMember._id, thirdMember._id],
+    chair: examMember._id,
+    appointedBy: hod._id
+  });
   students = await User.create([3.95, 3.7, 3.45, 3.2, 2.9].map((gpa, index) => ({
     firstName: `Student${index + 1}`,
     lastName: 'ECE',
@@ -70,7 +81,7 @@ beforeEach(async () => {
   })));
 });
 
-test('Year 3 students rank three unique streams while unrelated committee duties remain forbidden', async () => {
+test('Year 3 students rank three unique streams while the unified committee can manage the round', async () => {
   const roundResponse = await request(app)
     .post('/api/stream-selection/rounds')
     .set(auth(hod))
@@ -84,7 +95,7 @@ test('Year 3 students rank three unique streams while unrelated committee duties
   await request(app)
     .get('/api/stream-selection/manage')
     .set(auth(courseMember))
-    .expect(403);
+    .expect(200);
 
   await request(app)
     .post('/api/stream-selection/preferences')
@@ -108,7 +119,7 @@ test('Year 3 students rank three unique streams while unrelated committee duties
   expect(status.body.preference.status).toBe('SUBMITTED');
 });
 
-test('Exam Committee allocates by descending GPA, respects capacity, and uses the unranked fourth stream as fallback', async () => {
+test('Course and Exam Committee allocates by descending GPA, respects capacity, and uses the unranked fourth stream as fallback', async () => {
   const roundResponse = await request(app)
     .post('/api/stream-selection/rounds')
     .set(auth(examMember))
@@ -211,4 +222,34 @@ test('allocation is blocked until submitted students have GPA and total capacity
   await StreamSelectionRound.updateOne({ _id: roundId }, { capacities: ACADEMIC_STREAMS.map((academicStream) => ({ academicStream, seats: 0 })) });
   const insufficient = await request(app).post(`/api/stream-selection/rounds/${roundId}/allocate`).set(auth(hod)).expect(400);
   expect(insufficient.body.message).toMatch(/Total capacity/);
+});
+
+test('allocation requires submissions from the current eligible cohort', async () => {
+  const roundResponse = await request(app)
+    .post('/api/stream-selection/rounds')
+    .set(auth(hod))
+    .send({
+      semester: semester.id,
+      status: 'OPEN',
+      capacities: ACADEMIC_STREAMS.map((academicStream) => ({ academicStream, seats: 2 }))
+    })
+    .expect(201);
+
+  for (const student of students.slice(0, 4)) {
+    await request(app)
+      .post('/api/stream-selection/preferences')
+      .set(auth(student))
+      .send({ round: roundResponse.body.round._id, choices: ACADEMIC_STREAMS.slice(0, 3) })
+      .expect(201);
+  }
+
+  await User.updateOne({ _id: students[0]._id }, { yearLevel: 4 });
+  await StreamSelectionRound.updateOne({ _id: roundResponse.body.round._id }, { status: 'CLOSED' });
+
+  const response = await request(app)
+    .post(`/api/stream-selection/rounds/${roundResponse.body.round._id}/allocate`)
+    .set(auth(hod))
+    .expect(409);
+  expect(response.body.message).toMatch(/3 of 4 eligible students/);
+  expect(await StreamPreference.countDocuments({ round: roundResponse.body.round._id, status: 'ALLOCATED' })).toBe(0);
 });

@@ -13,8 +13,11 @@ services:
     env_file:
       - .env
     environment:
+      NODE_ENV: production
       MONGO_URI: mongodb://mongo:27017/instructor_evaluations
       MONGO_MEMORY_FALLBACK: false
+      SEED_DEMO_DATA: false
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
     depends_on:
       - mongo
     ports:

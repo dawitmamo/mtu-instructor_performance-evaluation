@@ -1,67 +1,76 @@
-import { useState } from 'react';
-import { BookOpenCheck, ClipboardCheck, Database, GraduationCap, LogIn, ShieldCheck, Sparkles, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Eye, EyeOff, LogIn, Moon, ShieldCheck, Sparkles, Sun, UserRound } from 'lucide-react';
+import { PasswordRecovery } from '../components/PasswordRecovery.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { getLoginDepartments } from '../api/client.js';
 import mtuLogo from '../assets/mtu-logo.png';
 
-const demoAccounts = [
-  { label: 'Login as Admin', detail: 'All departments, setup and reports', email: 'admin@mtu.edu.et', Icon: ShieldCheck },
-  { label: 'Login as Student', detail: 'Evaluate assigned course instructors', email: 'student.alex@mtu.edu.et', Icon: GraduationCap },
-  { label: 'Login as Instructor', detail: 'Assigned courses, peer tasks and reports', email: 'instructor.ada@mtu.edu.et', Icon: UserRound },
-  { label: 'Login as HOD', detail: 'Manage your department and evaluations', email: 'hod.cs@mtu.edu.et', Icon: BookOpenCheck },
-  { label: 'Login as Course Committee', detail: 'Courses, classes and instructor assignments', email: 'instructor.kojo@mtu.edu.et', Icon: BookOpenCheck },
-  { label: 'Login as Exam Committee', detail: 'Evaluation keys and academic reports', email: 'committee.cs@mtu.edu.et', Icon: ClipboardCheck }
+const userTypes = [
+  ['SUPER_ADMIN', 'Administrator'],
+  ['HOD', 'Head of Department (HOD)'],
+  ['INSTRUCTOR', 'Instructor'],
+  ['STUDENT', 'Student'],
+  ['COURSE_EXAM_COMMITTEE', 'Course & Exam Committee']
 ];
 
 export function Login() {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('admin@mtu.edu.et');
-  const [password, setPassword] = useState('Password123!');
+  const { login, darkMode, setDarkMode } = useAuth();
+  const [userType, setUserType] = useState('SUPER_ADMIN');
+  const [departments, setDepartments] = useState([]);
+  const [department, setDepartment] = useState('');
+  const [identifier, setIdentifier] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const chooseAccount = (accountEmail) => {
-    setEmail(accountEmail);
-    setPassword('Password123!');
+
+  useEffect(() => {
+    getLoginDepartments()
+      .then((rows) => {
+        setDepartments(rows);
+        setDepartment((current) => current || rows[0]?._id || '');
+      })
+      .catch(() => setError('Departments could not be loaded. Make sure the backend is running.'));
+  }, []);
+
+  const submitLogin = async (event) => {
+    event.preventDefault();
     setError('');
+    setBusy(true);
+    try {
+      await login(identifier, password, userType, userType === 'SUPER_ADMIN' ? undefined : department);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Cannot reach the API. Make sure the backend is running.');
+    } finally {
+      setBusy(false);
+    }
   };
-  const submit = async (event) => {
-    event.preventDefault(); setError(''); setBusy(true);
-    try { await login(email, password); }
-    catch (requestError) { setError(requestError.response?.data?.message || 'Cannot reach the API. Make sure the backend is running.'); }
-    finally { setBusy(false); }
-  };
-  return <main className='login-page'>
+
+  return <main className={darkMode ? 'login-page dark' : 'login-page'}>
+    <button className='login-theme-toggle' type='button' onClick={() => setDarkMode(!darkMode)} aria-label={darkMode ? 'Use light mode' : 'Use dark mode'}>
+      {darkMode ? <Sun size={18} /> : <Moon size={18} />}<span>{darkMode ? 'Light mode' : 'Dark mode'}</span>
+    </button>
     <section className='login-hero'>
-      <div className='university-mark'>
-        <img src={mtuLogo} alt='Mizan-Tepi University logo' />
-        <span>Mizan-Tepi University</span>
-      </div>
-      <p className='eyebrow'>Instructor Performance Evaluation System</p>
-      <h1>Evaluate Instructor performance with clarity.</h1>
-      <p>Role-based dashboards, MongoDB-backed academic data, and PDF-aligned criteria for students, instructors, HODs, and administrators.</p>
-      <div className='hero-badges'>
-        <span>Live MongoDB</span>
-        <span>Role-aware access</span>
-        <span>Semester based</span>
-      </div>
+      <div className='university-mark'><img src={mtuLogo} alt='Mizan-Tepi University logo' /><div><span>Mizan-Tepi University</span><small>Light of the Green Valley</small></div></div>
+      <p className='eyebrow'>University Academic Management and Instructor Performance Evaluation System</p>
+      <h1>Manage academic workflows and evaluate instructor performance with clarity.</h1>
+      <p>Role-based academic management, schedules, stream allocation, reporting, and instructor evaluation for students, instructors, HODs, committees, and administrators.</p>
+      <div className='hero-badges'><span>Live data</span><span>Role-aware access</span><span>Semester based</span></div>
     </section>
     <section className='login-card'>
-      <div className='login-brand'><img src={mtuLogo} alt='Mizan-Tepi University logo' /><div><strong>UIPES</strong><span>MTU Instructor Evaluation</span></div></div>
-      <h1>Choose how to log in</h1><p>Select a role, then sign in with that account. You can also enter another registered email.</p>
-      <div className='account-grid' aria-label='Login as a user role'>
-        {demoAccounts.map(({ label, detail, email: accountEmail, Icon }) =>
-          <button type='button' className={email === accountEmail ? 'selected' : ''} onClick={() => chooseAccount(accountEmail)} key={accountEmail}>
-            <Icon size={20} /><span><strong>{label}</strong><small>{detail}</small></span>
-          </button>
-        )}
-      </div>
-      <form onSubmit={submit}>
-        <label><span>MTU email address</span><input type='email' value={email} onChange={(event) => setEmail(event.target.value)} pattern='.+@mtu[.]edu[.]et' title='Use an @mtu.edu.et email address' placeholder='name@mtu.edu.et' required /></label>
-        <label><span>Password</span><input type='password' value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+      <div className='login-brand'><img src={mtuLogo} alt='Mizan-Tepi University logo' /><div><strong>UAMIPES</strong><span>MTU Academic Management &amp; Evaluation</span></div></div>
+      <div className='login-heading'><span className='login-heading-icon'><UserRound size={21} /></span><div><h1>Sign in</h1><p>Use the credentials assigned to your account.</p></div></div>
+      <form onSubmit={submitLogin}>
+        <label><span>Login as</span><select value={userType} onChange={(event) => { const nextType = event.target.value; setUserType(nextType); if (nextType !== 'SUPER_ADMIN' && !department) setDepartment(departments[0]?._id || ''); setError(''); }} aria-label='Select account role'>{userTypes.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Select the role assigned to this account.</small></label>
+        <label><span>Department</span><select value={userType === 'SUPER_ADMIN' ? '' : department} onChange={(event) => { setDepartment(event.target.value); setError(''); }} aria-label='Select account department' required={userType !== 'SUPER_ADMIN'} disabled={userType === 'SUPER_ADMIN' || !departments.length}>{userType === 'SUPER_ADMIN' ? <option value=''>University administration</option> : departments.map((item) => <option value={item._id} key={item._id}>{item.name} ({item.code})</option>)}</select><small>{userType === 'SUPER_ADMIN' ? 'Administrators are not limited to one department.' : 'Select the department assigned to your account.'}</small></label>
+        <label><span>MTU email or username</span><input type='text' value={identifier} onChange={(event) => setIdentifier(event.target.value.toLowerCase())} autoComplete='username' autoCapitalize='none' spellCheck='false' placeholder='name@mtu.edu.et or assigned username' aria-describedby='username-help' autoFocus required /><small id='username-help'>Use your institutional email or the username assigned by your Super Admin or HOD.</small></label>
+        <label><span>Password</span><div className='password-input'><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete='current-password' placeholder='Enter your password' required /><button type='button' onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
         {error && <div className='error-message' role='alert'>{error}</div>}
         <button className='primary-action' disabled={busy}><LogIn size={18} /> {busy ? 'Signing in...' : 'Sign in'}</button>
       </form>
-      <div className='demo-hint'><Database size={17} /><span>Demo password: <strong>Password123!</strong>. Instructors see only the peer evaluation tasks explicitly assigned to them.</span></div>
-      <div className='secure-note'><Sparkles size={15} /><span>Modernized for MTU academic evaluation workflows.  Designed by Dawit Mamo</span></div>
+      <PasswordRecovery defaultEmail={identifier.includes('@') ? identifier : ''} />
+      <div className='demo-hint'><ShieldCheck size={18} /><span>Super Admins manage all accounts. HODs manage instructors and students in their own departments.</span></div>
+      <div className='secure-note'><Sparkles size={15} /><span>Modernized for MTU academic evaluation workflows. Designed by Dawit Mamo</span></div>
     </section>
   </main>;
 }

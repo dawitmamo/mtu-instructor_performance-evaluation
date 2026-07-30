@@ -3,7 +3,6 @@ import { Department } from '../models/Department.js';
 import { Course } from '../models/Course.js';
 import { InstructorAssignment } from '../models/InstructorAssignment.js';
 import { Evaluation, PeerEvaluation } from '../models/Evaluations.js';
-import { EvaluationKey } from '../models/EvaluationKey.js';
 import { Report } from '../models/Report.js';
 import { Notification } from '../models/Notification.js';
 import { categoryScores, weightedOverall } from '../utils/score.js';
@@ -20,27 +19,30 @@ export const dashboardSummary = asyncHandler(async (req, res) => {
   const userDepartmentFilter = scopedDepartment ? { department: scopedDepartment } : {};
   const evaluationFilter = scopedDepartment ? { department: scopedDepartment } : {};
   const courseIds = scopedDepartment ? (await Course.find(courseFilter).select('_id')).map((course) => course._id) : [];
-  const assignmentIds = scopedDepartment ? (await InstructorAssignment.find({ course: { $in: courseIds } }).select('_id')).map((assignment) => assignment._id) : [];
-  const keyFilter = scopedDepartment ? { assignment: { $in: assignmentIds } } : {};
-  const notificationFilter = req.user.role === 'HOD'
+  const assignments = await InstructorAssignment.find({
+    status: 'PUBLISHED',
+    ...(scopedDepartment ? { course: { $in: courseIds } } : {})
+  }).select('enrolledStudents');
+  const notificationFilter = req.user.role === 'HOD' || (req.user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE')
     ? { $or: [{ user: req.user.id }, { audience: 'DEPARTMENT', department: scopedDepartment }, { audience: 'UNIVERSITY' }] }
     : { _id: null };
-  const [departments, courses, students, instructors, evaluations, keys, notifications] = await Promise.all([
+  const [departments, courses, students, instructors, evaluations, notifications] = await Promise.all([
     Department.countDocuments(departmentFilter),
     Course.countDocuments(courseFilter),
     User.countDocuments({ role: 'STUDENT', ...userDepartmentFilter }),
     User.countDocuments({ role: 'INSTRUCTOR', ...userDepartmentFilter }),
     Evaluation.find(evaluationFilter),
-    EvaluationKey.find(keyFilter),
     Notification.find(notificationFilter).sort({ createdAt: -1 }).limit(30).populate('sender', 'firstName lastName role')
   ]);
-  const completion = keys.length ? Math.round((keys.filter((key) => key.usedAt).length / keys.length) * 100) : 0;
-  res.json({ totals: { departments, courses, students, instructors }, evaluationCompletion: completion, pendingEvaluations: keys.filter((key) => !key.usedAt).length, averageScores: categoryScores(evaluations), notifications });
+  const expectedStudentEvaluations = assignments.reduce((sum, assignment) => sum + assignment.enrolledStudents.length, 0);
+  const submittedStudentEvaluations = evaluations.filter((evaluation) => evaluation.kind === 'STUDENT').length;
+  const completion = expectedStudentEvaluations ? Math.min(100, Math.round((submittedStudentEvaluations / expectedStudentEvaluations) * 100)) : 0;
+  res.json({ totals: { departments, courses, students, instructors }, evaluationCompletion: completion, pendingEvaluations: Math.max(0, expectedStudentEvaluations - submittedStudentEvaluations), averageScores: categoryScores(evaluations), notifications });
 });
 
 export const instructorDashboard = asyncHandler(async (req, res) => {
   const instructorId = req.params.instructorId || req.user.id;
-  const instructor = await User.findById(instructorId).select('department');
+  const instructor = await User.findOne({ _id: instructorId, role: 'INSTRUCTOR' }).select('firstName lastName department');
   if (!instructor) return res.status(404).json({ message: 'Instructor not found' });
   if (req.user.role === 'HOD' && (!req.user.department || String(req.user.department) !== String(instructor.department))) {
     return res.status(403).json({ message: 'You can only view instructors in your department' });
@@ -55,9 +57,10 @@ export const instructorDashboard = asyncHandler(async (req, res) => {
       .populate('instructor', 'firstName lastName email')
       .populate('course', 'code title level')
       .populate('semester', 'name academicYear'),
-    PeerEvaluation.find({ evaluator: instructorId }).select('instructor semester'),
+    PeerEvaluation.find({ evaluator: instructorId }).select('assignment'),
     Report.findOne({ instructor: instructorId, status: 'PUBLISHED' })
       .sort({ publishedAt: -1, updatedAt: -1 })
+      .populate('instructor', 'firstName lastName')
       .populate('semester', 'name academicYear')
       .populate('publishedBy', 'firstName lastName role'),
     Notification.find({
@@ -69,12 +72,24 @@ export const instructorDashboard = asyncHandler(async (req, res) => {
     }).sort({ createdAt: -1 }).limit(30).populate('sender', 'firstName lastName role')
   ]);
   const byKind = { student: evaluations.filter((item) => item.kind === 'STUDENT'), peer: evaluations.filter((item) => item.kind === 'PEER'), hod: evaluations.filter((item) => item.kind === 'HOD') };
-  const completedPeerTargets = new Set(submittedPeerEvaluations.map((item) => `${item.instructor}:${item.semester}`));
-  const peerTasks = peerCandidates.filter((assignment) => !evaluationWindowError(assignment) && !completedPeerTargets.has(`${assignment.instructor?._id}:${assignment.semester?._id}`));
+  const completedPeerTargets = new Set(submittedPeerEvaluations.map((item) => String(item.assignment)));
+  const peerTasks = peerCandidates.filter((assignment) => !evaluationWindowError(assignment) && !completedPeerTargets.has(String(assignment._id)));
   const enrolledStudents = assignments.reduce((sum, item) => sum + item.enrolledStudents.length, 0);
+  const assignedStudentMap = new Map();
+  for (const assignment of assignments) {
+    for (const student of assignment.enrolledStudents) {
+      if (!assignedStudentMap.has(student.id)) assignedStudentMap.set(student.id, { ...student.toObject(), courses: [] });
+      const record = assignedStudentMap.get(student.id);
+      if (assignment.course && !record.courses.some((course) => String(course._id) === String(assignment.course._id))) {
+        record.courses.push({ _id: assignment.course._id, code: assignment.course.code, title: assignment.course.title });
+      }
+    }
+  }
   res.json({
+    instructor,
     assignments,
     enrolledStudents,
+    assignedStudents: [...assignedStudentMap.values()],
     peerTasks,
     scores: weightedOverall(byKind),
     radar: categoryScores(evaluations),

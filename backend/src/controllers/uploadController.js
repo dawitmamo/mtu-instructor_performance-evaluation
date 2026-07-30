@@ -33,6 +33,7 @@ async function importUsers(req, res, forcedRole) {
   if (records.length > 1000) throw importError('A single import is limited to 1000 accounts');
 
   const seenEmails = new Set();
+  const seenUsernames = new Set();
   const prepared = [];
   for (const [index, record] of records.entries()) {
     const rowNumber = index + 2;
@@ -40,6 +41,10 @@ async function importUsers(req, res, forcedRole) {
     if (!isMtuEmail(email)) throw importError(`Row ${rowNumber}: ${MTU_EMAIL_MESSAGE}`);
     if (seenEmails.has(email)) throw importError(`Row ${rowNumber}: duplicate email ${email}`);
     seenEmails.add(email);
+    const username = String(record.username || email.split('@')[0]).trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,50}$/.test(username)) throw importError(`Row ${rowNumber}: username must be 3-50 lowercase letters, numbers, dots, underscores, or hyphens`);
+    if (seenUsernames.has(username)) throw importError(`Row ${rowNumber}: duplicate username ${username}`);
+    seenUsernames.add(username);
 
     const requestedDepartment = String(record.department || req.body.department || req.user.department || '').trim();
     if (!requestedDepartment) throw importError(`Row ${rowNumber}: department is required`);
@@ -64,10 +69,14 @@ async function importUsers(req, res, forcedRole) {
 
     const password = String(record.password || '');
     if (password && password.length < 8) throw importError(`Row ${rowNumber}: password must contain at least 8 characters`);
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ $or: [{ email }, { username }, { email: `${username}@mtu.edu.et` }] });
+    if (existing && existing.email !== email) throw importError(`Row ${rowNumber}: username ${username} is already assigned to another account`, 409);
     if (existing && existing.role !== role) throw importError(`Row ${rowNumber}: ${email} belongs to a different account role`, 409);
     if (existing && req.user.role !== 'SUPER_ADMIN' && String(existing.department || '') !== String(req.user.department)) {
       throw importError(`Row ${rowNumber}: you cannot modify an account in another department`, 403);
+    }
+    if (existing && password && req.user.role !== 'SUPER_ADMIN') {
+      throw importError(`Row ${rowNumber}: only the Super Admin can reset an existing user password`, 403);
     }
     prepared.push({
       existing,
@@ -75,6 +84,7 @@ async function importUsers(req, res, forcedRole) {
       payload: {
         firstName: requiredText(record.firstName, 'firstName', rowNumber),
         lastName: requiredText(record.lastName, 'lastName', rowNumber),
+        username,
         email,
         ...(role === 'STUDENT'
           ? { studentNumber: requiredText(record.studentNumber, 'studentNumber', rowNumber), yearLevel, gpa }
@@ -102,12 +112,12 @@ async function importUsers(req, res, forcedRole) {
       user = await User.create({
         ...item.payload,
         passwordHash: await User.hashPassword(item.password || 'Password123!'),
-        isEmailVerified: true,
         isActive: true
       });
     }
     results.push({
       email: user.email,
+      username: user.username,
       id: user.id,
       name: `${user.firstName} ${user.lastName}`,
       identifier: role === 'STUDENT' ? user.studentNumber : user.employeeNumber

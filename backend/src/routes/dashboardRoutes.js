@@ -6,7 +6,7 @@ import { createNotification, dashboardSummary, instructorDashboard } from '../co
 
 export const dashboardRoutes = Router();
 dashboardRoutes.use(authenticate);
-dashboardRoutes.get('/dashboard/summary', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), dashboardSummary);
+dashboardRoutes.get('/dashboard/summary', authorize('SUPER_ADMIN', 'HOD', 'COURSE_EXAM_COMMITTEE'), dashboardSummary);
 dashboardRoutes.get('/dashboard/instructor', authorize('INSTRUCTOR'), instructorDashboard);
 dashboardRoutes.get('/dashboard/instructor/:instructorId', authorize('SUPER_ADMIN', 'HOD'), instructorDashboard);
-dashboardRoutes.post('/notifications', authorize('SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'), validate(notificationSchema), createNotification);
+dashboardRoutes.post('/notifications', authorize('SUPER_ADMIN', 'HOD', 'COURSE_EXAM_COMMITTEE'), validate(notificationSchema), createNotification);

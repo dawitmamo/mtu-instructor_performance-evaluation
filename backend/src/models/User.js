@@ -3,13 +3,23 @@ import bcrypt from 'bcryptjs';
 import { ACADEMIC_STREAMS } from '../constants/academicStreams.js';
 import { isMtuEmail, MTU_EMAIL_MESSAGE, normalizeMtuEmail } from '../utils/email.js';
 
-export const ROLES = ['SUPER_ADMIN', 'HOD', 'EXAM_COMMITTEE', 'INSTRUCTOR', 'STUDENT'];
-export const COMMITTEE_ROLES = ['COURSE_COMMITTEE', 'EXAM_COMMITTEE'];
+export const ROLES = ['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT'];
+export const COMMITTEE_ROLES = ['COURSE_EXAM_COMMITTEE'];
 
 const userSchema = new mongoose.Schema(
   {
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
+    username: {
+      type: String,
+      unique: true,
+      sparse: true,
+      lowercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 50,
+      match: /^[a-z0-9._-]+$/
+    },
     email: {
       type: String,
       required: true,
@@ -28,11 +38,18 @@ const userSchema = new mongoose.Schema(
     gpa: { type: Number, min: 0, max: 4 },
     academicStream: { type: String, enum: ACADEMIC_STREAMS },
     employeeNumber: { type: String, trim: true },
-    isEmailVerified: { type: Boolean, default: false },
+    phone: { type: String, trim: true, maxlength: 30 },
+    bio: { type: String, trim: true, maxlength: 500 },
+    profilePhoto: {
+      data: { type: Buffer, select: false },
+      contentType: { type: String, enum: ['image/jpeg', 'image/png', 'image/webp'] },
+      fileName: { type: String, trim: true, maxlength: 180 },
+      updatedAt: Date
+    },
     isActive: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0 },
-    resetPasswordTokenHash: String,
-    resetPasswordExpiresAt: Date
+    resetPasswordTokenHash: { type: String, select: false },
+    resetPasswordExpiresAt: { type: Date, select: false }
   },
   { timestamps: true }
 );

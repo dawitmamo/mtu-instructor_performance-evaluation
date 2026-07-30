@@ -8,8 +8,8 @@ function sameId(first, second) {
 }
 
 function canManageSchedules(user) {
-  return ['SUPER_ADMIN', 'HOD', 'EXAM_COMMITTEE'].includes(user.role)
-    || (user.committeeRoles || []).some((role) => ['COURSE_COMMITTEE', 'EXAM_COMMITTEE'].includes(role));
+  return ['SUPER_ADMIN', 'HOD'].includes(user.role)
+    || (user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
 }
 
 function scopedDepartment(req, requestedDepartment) {

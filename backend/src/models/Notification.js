@@ -7,11 +7,12 @@ const notificationSchema = new mongoose.Schema(
     audience: { type: String, enum: ['USER', 'DEPARTMENT', 'UNIVERSITY'], default: 'USER', index: true },
     sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     relatedReport: { type: mongoose.Schema.Types.ObjectId, ref: 'Report' },
+    relatedAssignment: { type: mongoose.Schema.Types.ObjectId, ref: 'InstructorAssignment' },
     title: { type: String, required: true },
     message: { type: String, required: true },
     type: {
       type: String,
-      enum: ['INFO', 'REMINDER', 'DEADLINE', 'REPORT'],
+      enum: ['INFO', 'REMINDER', 'DEADLINE', 'REPORT', 'EVALUATION'],
       default: 'INFO'
     },
     readAt: Date
@@ -27,7 +28,11 @@ notificationSchema.pre('validate', function validateAudienceTarget(next) {
 
 notificationSchema.index(
   { user: 1, relatedReport: 1 },
-  { unique: true, partialFilterExpression: { relatedReport: { $exists: true } } }
+  { unique: true, name: 'unique_user_related_report', partialFilterExpression: { relatedReport: { $type: 'objectId' } } }
+);
+notificationSchema.index(
+  { user: 1, relatedAssignment: 1 },
+  { unique: true, name: 'unique_user_related_assignment', partialFilterExpression: { relatedAssignment: { $type: 'objectId' } } }
 );
 
 export const Notification = mongoose.model('Notification', notificationSchema);

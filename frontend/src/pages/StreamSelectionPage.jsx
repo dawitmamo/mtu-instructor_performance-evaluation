@@ -61,7 +61,7 @@ function StudentStreamSelection() {
   if (error && !data) return <div className='error-message'>{error}</div>;
   if (!data) return <div className='loading-state'>Loading stream selection...</div>;
   if (!data.eligible) return <section className='panel empty-state'><h2>Stream selection eligibility</h2><p>{data.reason}</p></section>;
-  if (!data.round) return <section className='panel empty-state'><h2>No selection round yet</h2><p>Your HOD or Exam Committee has not prepared the second-semester stream selection round.</p></section>;
+  if (!data.round) return <section className='panel empty-state'><h2>No selection round yet</h2><p>Your HOD or Course and Exam Committee has not prepared the second-semester stream selection round.</p></section>;
 
   const allocated = data.preference?.status === 'ALLOCATED';
   return <div className='stream-selection-layout'>
@@ -186,7 +186,7 @@ function StaffStreamSelection() {
   return <div className='stream-management'>
     <section className='panel'>
       <div className='panel-title'>
-        <div><h2>Selection round setup</h2><p>HOD and Exam Committee can prepare Year 3, Semester 2 allocation.</p></div>
+        <div><h2>Selection round setup</h2><p>HOD and Course and Exam Committee can prepare Year 3, Semester 2 allocation.</p></div>
         <button type='button' className='secondary-action' onClick={startNew}>New round</button>
       </div>
       {data.rounds.length > 0 && <label className='round-picker'><span>Existing round</span><select value={selectedRoundId} onChange={(event) => selectRound(event.target.value)}><option value=''>New round</option>{data.rounds.map((round) => <option key={round._id} value={round._id}>{round.semester?.name} {round.semester?.academicYear} - {round.status}</option>)}</select></label>}

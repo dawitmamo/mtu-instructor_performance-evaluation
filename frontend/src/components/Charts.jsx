@@ -1,7 +1,7 @@
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 export function AnalyticsCharts(props) {
-  const scores = props.scores;
+  const scores = props.scores || [];
   if (!scores.length) return <section className='panel empty-state'><h2>No evaluation scores yet</h2><p>Charts will appear after evaluations are submitted.</p></section>;
   return <section className='panel chart-panel'>
     <h2>Category Scores</h2>

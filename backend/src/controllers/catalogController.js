@@ -2,10 +2,12 @@ import { Department } from '../models/Department.js';
 import { Course } from '../models/Course.js';
 import { Semester } from '../models/Semester.js';
 import { InstructorAssignment } from '../models/InstructorAssignment.js';
+import { CoursePreference } from '../models/CoursePreference.js';
 import { ExamCommittee } from '../models/ExamCommittee.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { User } from '../models/User.js';
 import { validateCourseAcademicProfile, validateUserAcademicProfile } from '../utils/academicProfile.js';
+import { syncEvaluationNotifications } from '../services/evaluationNotifications.js';
 
 const assignmentPopulate = (query) => query
   .populate('instructor', 'firstName lastName email')
@@ -23,7 +25,7 @@ function sameId(first, second) {
 }
 
 function isCommitteeOperator(user) {
-  return user.role === 'EXAM_COMMITTEE' || (user.committeeRoles || []).some((role) => ['COURSE_COMMITTEE', 'EXAM_COMMITTEE'].includes(role));
+  return (user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
 }
 
 function httpError(message, statusCode) {
@@ -38,11 +40,45 @@ function ensureDepartmentAccess(req, department) {
   }
 }
 
-async function validateAssignmentRelations(req, body) {
+async function validateAssignmentRelations(req, body, currentAssignmentId) {
   const course = await Course.findById(body.course);
   if (!course) throw httpError('Course not found', 404);
   ensureDepartmentAccess(req, course.department);
   if (!sameId(course.semester, body.semester)) throw httpError('Assignment semester must match the course semester', 400);
+  if (body.enrollmentMode === 'COHORT') {
+    const cohort = body.studentCohort;
+    if (course.yearLevel && cohort.yearLevel !== course.yearLevel) {
+      throw httpError(`The selected class must be Year ${course.yearLevel} for this course`, 400);
+    }
+    if (course.academicStream && cohort.academicStream !== course.academicStream) {
+      throw httpError('The selected class must match the course academic stream', 400);
+    }
+    const cohortStudents = await User.find({
+      role: 'STUDENT',
+      isActive: true,
+      department: course.department,
+      yearLevel: cohort.yearLevel,
+      ...(cohort.academicStream ? { academicStream: cohort.academicStream } : {})
+    }).select('_id');
+    if (!cohortStudents.length) throw httpError('No active students were found in the selected class', 400);
+    body.enrolledStudents = cohortStudents.map((student) => student.id);
+  } else {
+    delete body.studentCohort;
+  }
+  const assignmentConflict = await InstructorAssignment.findOne({
+    ...(currentAssignmentId ? { _id: { $ne: currentAssignmentId } } : {}),
+    course: body.course,
+    semester: body.semester,
+    instructor: { $ne: body.instructor }
+  });
+  if (assignmentConflict) throw httpError('This course is already held by another instructor', 409);
+  const preferenceConflict = await CoursePreference.findOne({
+    confirmedCourse: body.course,
+    semester: body.semester,
+    instructor: { $ne: body.instructor },
+    status: { $in: ['FINALIZED', 'CONFIRMED'] }
+  });
+  if (preferenceConflict) throw httpError('This course allocation was finalized for another instructor', 409);
 
   const requestedIds = [...new Set([body.instructor, ...body.enrolledStudents, ...body.peerEvaluators])];
   const users = await User.find({ _id: { $in: requestedIds } }).select('role department isActive yearLevel academicStream');
@@ -91,11 +127,13 @@ function sanitizeUserPayload(body) {
 export const listDepartments = asyncHandler(async (req, res) => res.json({ departments: await Department.find().populate('hod', 'firstName lastName email') }));
 export const listUsers = asyncHandler(async (req, res) => {
   const filter = req.query.role ? { role: req.query.role } : {};
-  if (req.user.role !== 'SUPER_ADMIN') {
+  if (req.user.role === 'HOD' || isCommitteeOperator(req.user)) {
+    if (req.query.role && !['INSTRUCTOR', 'STUDENT'].includes(req.query.role)) filter._id = null;
+    filter.role = req.query.role || { $in: ['INSTRUCTOR', 'STUDENT'] };
     if (req.user.department) filter.department = req.user.department;
     else filter._id = null;
   }
-  const users = await User.find(filter).select('firstName lastName email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code').sort({ yearLevel: 1, academicStream: 1, lastName: 1 });
+  const users = await User.find(filter).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code').sort({ yearLevel: 1, academicStream: 1, lastName: 1 });
   res.json({ users });
 });
 export const createDepartment = asyncHandler(async (req, res) => res.status(201).json({ department: await Department.create(req.validated.body) }));
@@ -114,12 +152,15 @@ export const updateSemester = asyncHandler(async (req, res) => {
 
 export const listCourses = asyncHandler(async (req, res) => {
   const filter = {};
-  if (req.user.role === 'HOD' || isCommitteeOperator(req.user)) {
+  if (req.user.role === 'HOD' || req.user.role === 'STUDENT' || isCommitteeOperator(req.user)) {
     if (!req.user.department) filter._id = null;
     else filter.department = req.user.department;
   } else if (req.query.department) filter.department = req.query.department;
   if (req.query.semester) filter.semester = req.query.semester;
-  const courses = await Course.find(filter).populate('department', 'name code').populate('semester', 'name academicYear');
+  const courses = await Course.find(filter)
+    .populate('department', 'name code')
+    .populate('semester', 'name academicYear')
+    .sort({ department: 1, yearLevel: 1, level: 1, code: 1 });
   res.json({ courses });
 });
 
@@ -140,7 +181,8 @@ export const updateCourse = asyncHandler(async (req, res) => {
 
 export const listAssignments = asyncHandler(async (req, res) => {
   const filter = {};
-  if (req.user.role === 'HOD' || isCommitteeOperator(req.user)) {
+  const canManageDepartmentAssignments = req.user.role === 'HOD' || isCommitteeOperator(req.user);
+  if (canManageDepartmentAssignments) {
     const courses = req.user.department ? await Course.find({ department: req.user.department }).select('_id') : [];
     filter.course = { $in: courses.map((course) => course._id) };
   } else if (req.user.role === 'INSTRUCTOR') {
@@ -148,7 +190,12 @@ export const listAssignments = asyncHandler(async (req, res) => {
   } else if (req.user.role === 'STUDENT') {
     filter.enrolledStudents = req.user.id;
   }
-  if (req.query.instructor) filter.instructor = req.query.instructor;
+  // Only assignment managers may choose an arbitrary instructor. Without this
+  // guard an instructor could replace the own-account filter through the query
+  // string and retrieve another instructor's student roster.
+  if (req.query.instructor && (req.user.role === 'SUPER_ADMIN' || canManageDepartmentAssignments)) {
+    filter.instructor = req.query.instructor;
+  }
   if (req.query.semester) filter.semester = req.query.semester;
   const assignments = await assignmentPopulate(InstructorAssignment.find(filter)).sort({ updatedAt: -1 });
   res.json({ assignments });
@@ -157,19 +204,19 @@ export const listAssignments = asyncHandler(async (req, res) => {
 export const createAssignment = asyncHandler(async (req, res) => {
   await validateAssignmentRelations(req, req.validated.body);
   const { instructor, course, semester } = req.validated.body;
-  const assignment = await InstructorAssignment.findOneAndUpdate(
-    { instructor, course, semester },
-    { ...req.validated.body, assignedBy: req.user.id },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
-  );
+  const existing = await InstructorAssignment.exists({ instructor, course, semester });
+  if (existing) throw httpError('This course assignment already exists; edit it instead of creating another one', 409);
+  const assignment = await InstructorAssignment.create({ ...req.validated.body, assignedBy: req.user.id });
+  await syncEvaluationNotifications(assignment._id, req.user.id);
   res.status(201).json({ assignment: await assignmentPopulate(InstructorAssignment.findById(assignment._id)) });
 });
 export const updateAssignment = asyncHandler(async (req, res) => {
   const current = await InstructorAssignment.findById(req.params.id).populate('course');
   if (!current) return notFound(res, 'Assignment');
   ensureDepartmentAccess(req, current.course.department);
-  await validateAssignmentRelations(req, req.validated.body);
+  await validateAssignmentRelations(req, req.validated.body, current._id);
   const assignment = await InstructorAssignment.findByIdAndUpdate(req.params.id, req.validated.body, { new: true, runValidators: true });
+  await syncEvaluationNotifications(assignment._id, req.user.id);
   res.json({ assignment: await assignmentPopulate(InstructorAssignment.findById(assignment._id)) });
 });
 
@@ -177,30 +224,32 @@ export const updateUser = asyncHandler(async (req, res) => {
   const current = await User.findById(req.params.id);
   if (!current) return notFound(res, 'User');
   const { payload, password } = sanitizeUserPayload(req.validated.body);
+  payload.username ||= current.username || payload.email.split('@')[0];
   await validateUserAcademicProfile(payload);
   if (payload.committeeRoles?.length && payload.role !== 'INSTRUCTOR') {
     return res.status(400).json({ message: 'Committee duties can only be assigned to instructor accounts' });
   }
-  const currentIsExamMember = (current.committeeRoles || []).includes('EXAM_COMMITTEE');
-  const requestedAsExamMember = (payload.committeeRoles || []).includes('EXAM_COMMITTEE');
+  const currentIsExamMember = (current.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
+  const requestedAsExamMember = (payload.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
   if (currentIsExamMember !== requestedAsExamMember) {
-    return res.status(400).json({ message: 'Assign Exam Committee members from the semester Exam Committee page' });
+    return res.status(400).json({ message: 'Assign Course and Exam Committee members from the semester committee page' });
   }
-  if (req.user.role === 'HOD' && (current.role === 'SUPER_ADMIN' || payload.role === 'SUPER_ADMIN')) return res.status(403).json({ message: 'HOD users cannot modify Super Admin accounts' });
   if (req.user.role === 'HOD') {
+    if (!['INSTRUCTOR', 'STUDENT'].includes(current.role) || !['INSTRUCTOR', 'STUDENT'].includes(payload.role)) {
+      return res.status(403).json({ message: 'HOD users can only modify instructor or student accounts' });
+    }
     if (!req.user.department || !sameId(current.department, req.user.department) || !sameId(payload.department, req.user.department)) {
       return res.status(403).json({ message: 'HOD users can only modify accounts in their department' });
     }
   }
-  if (isCommitteeOperator(req.user) && req.user.role !== 'HOD') {
-    if (!['INSTRUCTOR', 'STUDENT'].includes(current.role) || !['INSTRUCTOR', 'STUDENT'].includes(payload.role)) {
-      return res.status(403).json({ message: 'Committee members can only modify instructor or student accounts' });
-    }
-    if (!req.user.department || !sameId(current.department, req.user.department) || !sameId(payload.department, req.user.department)) {
-      return res.status(403).json({ message: 'Committee members can only modify accounts in their department' });
-    }
-    payload.committeeRoles = current.committeeRoles || [];
+  if (password && req.user.role !== 'SUPER_ADMIN') {
+    return res.status(403).json({ message: 'Only the Super Admin can reset an existing user password' });
   }
+  const usernameConflict = await User.exists({
+    _id: { $ne: current._id },
+    $or: [{ username: payload.username }, { email: `${payload.username}@mtu.edu.et` }]
+  });
+  if (usernameConflict) return res.status(409).json({ message: 'Username already registered' });
   if (payload.role === 'SUPER_ADMIN') delete payload.department;
   if (payload.role === 'STUDENT') delete payload.employeeNumber;
   if (password) payload.passwordHash = await User.hashPassword(password);
@@ -219,32 +268,39 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (!payload.employeeNumber) unset.employeeNumber = 1;
   const update = { $set: payload };
   if (Object.keys(unset).length) update.$unset = unset;
-  const user = await User.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true }).select('firstName lastName email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code');
+  const user = await User.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true }).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code');
   res.json({ user });
 });
 
 export const upsertExamCommittee = asyncHandler(async (req, res) => {
-  if (!req.user.department) return res.status(403).json({ message: 'The HOD account must belong to a department' });
-  const { semester, members, chair } = req.validated.body;
+  const { department, semester, members, chair } = req.validated.body;
+  if (req.user.role === 'HOD' && department && !sameId(department, req.user.department)) {
+    return res.status(403).json({ message: 'HOD users can only appoint their own department committee' });
+  }
+  const departmentId = req.user.role === 'SUPER_ADMIN' ? department : req.user.department;
+  if (!departmentId) {
+    return res.status(400).json({ message: req.user.role === 'SUPER_ADMIN' ? 'Select a department' : 'The HOD account must belong to a department' });
+  }
+  if (!(await Department.exists({ _id: departmentId }))) return notFound(res, 'Department');
   if (!(await Semester.exists({ _id: semester }))) return notFound(res, 'Semester');
 
-  const instructors = await User.find({ _id: { $in: members }, role: 'INSTRUCTOR', department: req.user.department, isActive: true });
+  const instructors = await User.find({ _id: { $in: members }, role: 'INSTRUCTOR', department: departmentId, isActive: true });
   if (instructors.length !== 3) {
-    return res.status(400).json({ message: 'Select exactly three active instructors from your department' });
+    return res.status(400).json({ message: 'Select exactly three active instructors from the selected department' });
   }
 
-  const previous = await ExamCommittee.findOne({ department: req.user.department, semester });
+  const previous = await ExamCommittee.findOne({ department: departmentId, semester });
   const committee = await ExamCommittee.findOneAndUpdate(
-    { department: req.user.department, semester },
-    { department: req.user.department, semester, members, chair, appointedBy: req.user.id, status: 'ACTIVE' },
+    { department: departmentId, semester },
+    { department: departmentId, semester, members, chair, appointedBy: req.user.id, status: 'ACTIVE' },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
 
-  await User.updateMany({ _id: { $in: members } }, { $addToSet: { committeeRoles: 'EXAM_COMMITTEE' } });
+  await User.updateMany({ _id: { $in: members } }, { $addToSet: { committeeRoles: 'COURSE_EXAM_COMMITTEE' } });
   const removedMembers = (previous?.members || []).filter((member) => !members.includes(String(member)));
   for (const member of removedMembers) {
     const stillAppointed = await ExamCommittee.exists({ _id: { $ne: committee._id }, status: 'ACTIVE', members: member });
-    if (!stillAppointed) await User.updateOne({ _id: member }, { $pull: { committeeRoles: 'EXAM_COMMITTEE' } });
+    if (!stillAppointed) await User.updateOne({ _id: member }, { $pull: { committeeRoles: 'COURSE_EXAM_COMMITTEE' } });
   }
 
   const populated = await ExamCommittee.findById(committee._id)
@@ -257,7 +313,13 @@ export const upsertExamCommittee = asyncHandler(async (req, res) => {
 });
 
 export const listExamCommittees = asyncHandler(async (req, res) => {
-  const committees = await ExamCommittee.find({ department: req.user.department })
+  const filter = {};
+  if (req.user.role === 'SUPER_ADMIN') {
+    if (req.query.department) filter.department = req.query.department;
+  } else if (req.user.department) filter.department = req.user.department;
+  else return res.status(403).json({ message: 'The HOD account must belong to a department' });
+
+  const committees = await ExamCommittee.find(filter)
     .populate('department', 'name code')
     .populate('semester', 'name academicYear status')
     .populate('members', 'firstName lastName email employeeNumber academicStream')

@@ -56,9 +56,8 @@ test('ECE instructors and upper-year students require a valid stream and assignm
     .put(`/api/users/${student.body.user.id}`)
     .set(auth(hod))
     .send({ ...studentBase, yearLevel: 3, academicStream: '', gpa: '', isActive: true })
-    .expect(200);
-  const movedToYearThree = await User.findById(student.body.user.id);
-  expect(movedToYearThree.yearLevel).toBe(3);
-  expect(movedToYearThree.academicStream).toBeUndefined();
-  expect(movedToYearThree.gpa).toBeUndefined();
+    .expect(403);
+  const unchangedStudent = await User.findById(student.body.user.id);
+  expect(unchangedStudent.yearLevel).toBe(4);
+  expect(unchangedStudent.academicStream).toBe('COMPUTER_ENGINEERING');
 });

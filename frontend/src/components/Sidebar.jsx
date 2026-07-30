@@ -1,53 +1,60 @@
-import { BarChart3, BookOpen, CalendarClock, CalendarDays, Database, GraduationCap, KeyRound, LayoutDashboard, Link2, ListOrdered, LogOut, Moon, Sun, Users } from 'lucide-react';
+import { useState } from 'react';
+import { BarChart3, BookMarked, BookOpen, CalendarClock, CalendarDays, CircleUserRound, Database, GraduationCap, LayoutDashboard, Link2, ListOrdered, LogOut, Menu, Moon, Sun, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import mtuLogo from '../assets/mtu-logo.png';
 
 const items = [
   ['dashboard', 'Dashboard', LayoutDashboard],
+  ['profile', 'My Profile', CircleUserRound],
   ['departments', 'Departments', GraduationCap],
   ['semesters', 'Semesters', CalendarDays],
   ['courses', 'Courses', BookOpen],
-  ['assignments', 'Assignments', Link2],
+  ['course-preferences', 'Course Preferences', BookMarked],
+  ['course-assignments', 'Course Assignments', BookMarked],
+  ['assignments', 'Evaluation Assignments', Link2],
   ['schedules', 'Schedules', CalendarClock],
-  ['committees', 'Exam Committee', Users],
+  ['committees', 'Course & Exam Committee', Users],
   ['stream-selection', 'Stream Selection', ListOrdered],
-  ['keys', 'Evaluation Keys', KeyRound],
   ['reports', 'Reports', BarChart3],
   ['users', 'Users', Users]
 ];
 
 function allowed(page, user) {
   const { role, committeeRoles = [] } = user;
-  if (page === 'committees') return role === 'HOD';
-  if (page === 'stream-selection') return role === 'STUDENT' || role === 'HOD' || role === 'EXAM_COMMITTEE' || committeeRoles.includes('EXAM_COMMITTEE');
+  if (page === 'profile') return true;
+  if (page === 'users') return role === 'SUPER_ADMIN' || role === 'HOD';
+  if (page === 'committees') return role === 'HOD' || role === 'SUPER_ADMIN';
+  if (page === 'course-preferences') return role === 'HOD' || role === 'INSTRUCTOR';
+  if (page === 'stream-selection') return role === 'STUDENT' || role === 'HOD' || committeeRoles.includes('COURSE_EXAM_COMMITTEE');
   if (role === 'STUDENT') return ['dashboard', 'courses', 'schedules'].includes(page);
   if (role === 'INSTRUCTOR') {
-    if (!committeeRoles.length) return ['dashboard', 'schedules'].includes(page);
-    return ['dashboard', 'semesters', 'courses', 'assignments', 'schedules', 'keys', 'reports', 'users'].includes(page);
+    if (!committeeRoles.length) return ['dashboard', 'course-preferences', 'schedules', 'reports'].includes(page);
+    return ['dashboard', 'semesters', 'courses', 'course-preferences', 'course-assignments', 'assignments', 'schedules', 'reports'].includes(page);
   }
-  if (role === 'SUPER_ADMIN') return page !== 'keys';
-  if (role === 'EXAM_COMMITTEE') return true;
+  if (role === 'SUPER_ADMIN') return true;
   return true;
 }
 
 export function Sidebar({ activePage, onNavigate, databaseConnected }) {
   const { user, logout, darkMode, setDarkMode } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const visibleItems = items.filter(([id]) => allowed(id, user));
   const links = visibleItems.map(([id, label, Icon]) => (
-    <button type='button' className={activePage === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => onNavigate(id)}>
+    <button type='button' className={activePage === id ? 'nav-item active' : 'nav-item'} key={id} onClick={() => { onNavigate(id); setMobileOpen(false); }}>
       <Icon size={18} /><span>{label}</span>
     </button>
   ));
-  return <aside className='sidebar'>
+  return <aside className={mobileOpen ? 'sidebar mobile-open' : 'sidebar'}>
     <div className='brand'>
       <img src={mtuLogo} alt='Mizan-Tepi University logo' />
-      <div><strong>UIPES</strong><span>MTU Evaluation Suite</span></div>
+      <div><strong>UAMIPES</strong><span>MTU Academic Evaluation Suite</span><small>Light of the Green Valley</small></div>
+      <button type='button' className='sidebar-menu-button' onClick={() => setMobileOpen((open) => !open)} aria-expanded={mobileOpen} aria-controls='primary-navigation' aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
     </div>
-    <nav>{links}</nav>
+    <nav id='primary-navigation'>{links}</nav>
     <div className='sidebar-footer'>
-      <div className={databaseConnected ? 'db-status connected' : 'db-status'}><Database size={16} /><span>{databaseConnected ? 'MongoDB connected' : 'Checking database'}</span></div>
+      <div className={databaseConnected ? 'db-status connected' : 'db-status'}><Database size={16} /><span>{databaseConnected ? 'Data connected' : 'Checking data'}</span></div>
       <button type='button' className='mode-button' onClick={() => setDarkMode(!darkMode)}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}<span>{darkMode ? 'Light' : 'Dark'} mode</span></button>
-      <button type='button' className='mode-button sign-out-button' onClick={logout} aria-label='Sign out of UIPES'><LogOut size={18} /><span>Sign out</span></button>
+      <button type='button' className='mode-button sign-out-button' onClick={logout} aria-label='Sign out of UAMIPES'><LogOut size={18} /><span>Sign out</span></button>
     </div>
   </aside>;
 }

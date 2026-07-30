@@ -18,7 +18,7 @@ try {
     Course.find({ department: department._id }),
     ExamCommittee.find({ department: department._id }),
     StreamSelectionRound.find({ department: department._id }).populate('semester', 'name academicYear'),
-    User.find({}).select('email'),
+    User.find({}).select('email role committeeRoles'),
     Schedule.find({ department: department._id }).select('semester status')
   ]);
   const courseMap = new Map(courses.map((course) => [course.id, course]));
@@ -35,7 +35,19 @@ try {
   const invalidEceStudents = users.filter((user) => user.role === 'STUDENT'
     && (!user.yearLevel || (user.yearLevel >= 4 && !user.academicStream) || (user.yearLevel < 4 && user.academicStream)));
   const invalidEceInstructors = users.filter((user) => user.role === 'INSTRUCTOR' && !user.academicStream);
-  const invalidCommittees = committees.filter((committee) => committee.members.length !== 3 || new Set(committee.members.map(String)).size !== 3);
+  const allUserMap = new Map(allUsers.map((user) => [user.id, user]));
+  const invalidCommitteeUsers = allUsers.filter((user) => {
+    const duties = user.committeeRoles || [];
+    return !['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT'].includes(user.role)
+      || duties.some((duty) => duty !== 'COURSE_EXAM_COMMITTEE')
+      || (duties.includes('COURSE_EXAM_COMMITTEE') && user.role !== 'INSTRUCTOR');
+  });
+  const invalidCommittees = committees.filter((committee) => committee.members.length !== 3
+    || new Set(committee.members.map(String)).size !== 3
+    || committee.members.some((member) => {
+      const user = allUserMap.get(String(member));
+      return user?.role !== 'INSTRUCTOR' || !(user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
+    }));
   const summary = {
     eceUsers: users.length,
     invalidMtuEmails: allUsers.filter((user) => !isMtuEmail(user.email)).length,
@@ -46,6 +58,7 @@ try {
     schedules: schedules.length,
     assignments: assignments.length,
     invalidAssignments: invalidAssignments.length,
+    invalidCommitteeUsers: invalidCommitteeUsers.length,
     invalidCommittees: invalidCommittees.length,
     selectionRounds: rounds.map((round) => ({
       semester: `${round.semester?.name || 'Unknown'} ${round.semester?.academicYear || ''}`.trim(),
@@ -54,7 +67,7 @@ try {
     }))
   };
   console.log(`ECE data integrity: ${JSON.stringify(summary)}`);
-  if (summary.invalidMtuEmails || invalidEceStudents.length || invalidEceInstructors.length || invalidAssignments.length || invalidCommittees.length) process.exitCode = 1;
+  if (summary.invalidMtuEmails || invalidEceStudents.length || invalidEceInstructors.length || invalidAssignments.length || invalidCommitteeUsers.length || invalidCommittees.length) process.exitCode = 1;
 } finally {
   await disconnectDb();
 }

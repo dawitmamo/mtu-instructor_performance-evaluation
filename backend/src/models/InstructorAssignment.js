@@ -5,6 +5,14 @@ const instructorAssignmentSchema = new mongoose.Schema(
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     semester: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', required: true },
+    enrollmentMode: { type: String, enum: ['COHORT', 'INDIVIDUAL'], default: 'INDIVIDUAL' },
+    studentCohort: {
+      type: {
+        yearLevel: { type: Number, min: 2, max: 5, required: true },
+        academicStream: { type: String }
+      },
+      _id: false
+    },
     enrolledStudents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     peerEvaluators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

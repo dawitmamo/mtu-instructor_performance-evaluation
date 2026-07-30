@@ -137,14 +137,26 @@ export const allocateStreams = asyncHandler(async (req, res) => {
   const department = await eceDepartmentFor(req.user);
   const round = await StreamSelectionRound.findById(req.params.id);
   if (!round || !sameId(round.department, department)) throw httpError('Stream selection round not found', 404);
-  if (round.status !== 'CLOSED') throw httpError('Close the submission round before running allocation', 409);
   if (round.status === 'ALLOCATED') throw httpError('This round has already been allocated', 409);
+  if (round.status !== 'CLOSED') throw httpError('Close the submission round before running allocation', 409);
 
-  const preferences = await populatePreferences(StreamPreference.find({ round: round._id }));
+  const eligibleStudents = await User.find({
+    role: 'STUDENT',
+    department: department._id,
+    yearLevel: 3,
+    isActive: true
+  }).select('_id');
+  const eligibleStudentIds = eligibleStudents.map((student) => student._id);
+  // A student can become inactive or move to another year after submitting.
+  // Allocate only the current eligible cohort and require an exact submission
+  // from each member of that cohort instead of comparing unrelated counts.
+  const preferences = await populatePreferences(StreamPreference.find({
+    round: round._id,
+    student: { $in: eligibleStudentIds }
+  }));
   if (!preferences.length) throw httpError('No student preferences have been submitted', 409);
-  const eligibleStudentCount = await User.countDocuments({ role: 'STUDENT', department: department._id, yearLevel: 3, isActive: true });
-  if (preferences.length !== eligibleStudentCount) {
-    throw httpError(`${preferences.length} of ${eligibleStudentCount} eligible students submitted preferences. Collect every submission before allocation.`, 409);
+  if (preferences.length !== eligibleStudents.length) {
+    throw httpError(`${preferences.length} of ${eligibleStudents.length} eligible students submitted preferences. Collect every submission before allocation.`, 409);
   }
   const missingGpa = preferences.filter((preference) => typeof preference.student?.gpa !== 'number');
   if (missingGpa.length) {

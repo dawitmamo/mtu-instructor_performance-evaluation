@@ -1,11 +1,19 @@
-import bcrypt from 'bcryptjs';
+import { AuditLog } from '../models/AuditLog.js';
 import { Department } from '../models/Department.js';
 import { Semester } from '../models/Semester.js';
 import { Course } from '../models/Course.js';
+import { CoursePreference } from '../models/CoursePreference.js';
 import { User } from '../models/User.js';
 import { InstructorAssignment } from '../models/InstructorAssignment.js';
+import { ExamCommittee } from '../models/ExamCommittee.js';
+import { Evaluation } from '../models/Evaluations.js';
 import { EvaluationTemplate } from '../models/EvaluationTemplate.js';
-import { EvaluationKey } from '../models/EvaluationKey.js';
+import { Notification } from '../models/Notification.js';
+import { Report } from '../models/Report.js';
+import { Schedule } from '../models/Schedule.js';
+import { StreamPreference } from '../models/StreamPreference.js';
+import { StreamSelectionRound } from '../models/StreamSelectionRound.js';
+import { Student } from '../models/Student.js';
 import { evaluationScale, evaluationTemplates } from '../utils/evaluationTemplate.js';
 import { seedEceSampleData } from './eceSampleData.js';
 
@@ -35,7 +43,7 @@ async function upsertDepartment({ code, name, faculty }) {
 async function upsertUser({ email, passwordHash, ...payload }) {
   return User.findOneAndUpdate(
     { email },
-    { ...payload, email, passwordHash, isEmailVerified: true, isActive: true },
+    { ...payload, username: email.split('@')[0], email, passwordHash, isActive: true },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
 }
@@ -108,7 +116,6 @@ export async function seedSampleAcademicData() {
   const admin = await User.findOne({ email: 'admin@mtu.edu.et' });
   const departments = await Promise.all([
     upsertDepartment({ code: 'CS', name: 'Computer Science', faculty: 'Engineering and Technology' }),
-    upsertDepartment({ code: 'EE', name: 'Electrical Engineering', faculty: 'Engineering and Technology' }),
     upsertDepartment({ code: 'ME', name: 'Mechanical Engineering', faculty: 'Engineering and Technology' }),
     upsertDepartment({ code: 'CE', name: 'Civil Engineering', faculty: 'Engineering and Technology' }),
     upsertDepartment({ code: 'IT', name: 'Information Technology', faculty: 'Computing and Informatics' })
@@ -117,17 +124,13 @@ export async function seedSampleAcademicData() {
 
   const users = await Promise.all([
     upsertUser({ firstName: 'Nadia', lastName: 'Head', email: 'hod.cs@mtu.edu.et', passwordHash, role: 'HOD', department: byCode.get('CS')._id, employeeNumber: 'HOD-CS-001' }),
-    upsertUser({ firstName: 'Elena', lastName: 'Bekele', email: 'hod.ee@mtu.edu.et', passwordHash, role: 'HOD', department: byCode.get('EE')._id, employeeNumber: 'HOD-EE-001' }),
     upsertUser({ firstName: 'Mekonnen', lastName: 'Tadesse', email: 'hod.me@mtu.edu.et', passwordHash, role: 'HOD', department: byCode.get('ME')._id, employeeNumber: 'HOD-ME-001' }),
     upsertUser({ firstName: 'Sara', lastName: 'Kebede', email: 'hod.ce@mtu.edu.et', passwordHash, role: 'HOD', department: byCode.get('CE')._id, employeeNumber: 'HOD-CE-001' }),
     upsertUser({ firstName: 'Helen', lastName: 'Tesfaye', email: 'hod.it@mtu.edu.et', passwordHash, role: 'HOD', department: byCode.get('IT')._id, employeeNumber: 'HOD-IT-001' }),
-    upsertUser({ firstName: 'Sam', lastName: 'Committee', email: 'committee.cs@mtu.edu.et', passwordHash, role: 'EXAM_COMMITTEE', department: byCode.get('CS')._id, employeeNumber: 'COM-CS-001' }),
-    upsertUser({ firstName: 'Dawit', lastName: 'Committee', email: 'committee.engineering@mtu.edu.et', passwordHash, role: 'EXAM_COMMITTEE', department: byCode.get('EE')._id, employeeNumber: 'COM-ENG-001' }),
+    upsertUser({ firstName: 'Sam', lastName: 'Committee', email: 'committee.cs@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('CS')._id, employeeNumber: 'COM-CS-001' }),
     upsertUser({ firstName: 'Ada', lastName: 'Mensah', email: 'instructor.ada@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('CS')._id, employeeNumber: 'INS-CS-001' }),
-    upsertUser({ firstName: 'Kojo', lastName: 'Annan', email: 'instructor.kojo@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_COMMITTEE'], department: byCode.get('CS')._id, employeeNumber: 'INS-CS-002' }),
+    upsertUser({ firstName: 'Kojo', lastName: 'Annan', email: 'instructor.kojo@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('CS')._id, employeeNumber: 'INS-CS-002' }),
     upsertUser({ firstName: 'Abel', lastName: 'Bekele', email: 'instructor.abel.cs@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('CS')._id, employeeNumber: 'INS-CS-003' }),
-    upsertUser({ firstName: 'Meron', lastName: 'Alemu', email: 'instructor.meron.ee@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('EE')._id, employeeNumber: 'INS-EE-001' }),
-    upsertUser({ firstName: 'Yonas', lastName: 'Fikru', email: 'instructor.yonas.ee@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('EE')._id, employeeNumber: 'INS-EE-002' }),
     upsertUser({ firstName: 'Samuel', lastName: 'Wolde', email: 'instructor.samuel.me@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('ME')._id, employeeNumber: 'INS-ME-001' }),
     upsertUser({ firstName: 'Ruth', lastName: 'Girma', email: 'instructor.ruth.me@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('ME')._id, employeeNumber: 'INS-ME-002' }),
     upsertUser({ firstName: 'Bekele', lastName: 'Hailu', email: 'instructor.bekele.ce@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('CE')._id, employeeNumber: 'INS-CE-001' }),
@@ -135,8 +138,6 @@ export async function seedSampleAcademicData() {
     upsertUser({ firstName: 'Tigist', lastName: 'Abebe', email: 'instructor.tigist.it@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('IT')._id, employeeNumber: 'INS-IT-001' }),
     upsertUser({ firstName: 'Noah', lastName: 'Morgan', email: 'instructor.noah.it@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: byCode.get('IT')._id, employeeNumber: 'INS-IT-002' }),
     upsertUser({ firstName: 'Alex', lastName: 'Student', email: 'student.alex@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('CS')._id, studentNumber: 'STU-CS-001' }),
-    upsertUser({ firstName: 'Marta', lastName: 'Solomon', email: 'student.marta.ee@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('EE')._id, studentNumber: 'STU-EE-001' }),
-    upsertUser({ firstName: 'Eyob', lastName: 'Tesema', email: 'student.eyob.ee@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('EE')._id, studentNumber: 'STU-EE-002' }),
     upsertUser({ firstName: 'Hana', lastName: 'Lemma', email: 'student.hana.me@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('ME')._id, studentNumber: 'STU-ME-001' }),
     upsertUser({ firstName: 'Biruk', lastName: 'Kassa', email: 'student.biruk.me@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('ME')._id, studentNumber: 'STU-ME-002' }),
     upsertUser({ firstName: 'Selam', lastName: 'Yilma', email: 'student.selam.ce@mtu.edu.et', passwordHash, role: 'STUDENT', department: byCode.get('CE')._id, studentNumber: 'STU-CE-001' }),
@@ -148,7 +149,6 @@ export async function seedSampleAcademicData() {
 
   await Promise.all([
     Department.updateOne({ code: 'CS' }, { hod: userByEmail.get('hod.cs@mtu.edu.et')._id }),
-    Department.updateOne({ code: 'EE' }, { hod: userByEmail.get('hod.ee@mtu.edu.et')._id }),
     Department.updateOne({ code: 'ME' }, { hod: userByEmail.get('hod.me@mtu.edu.et')._id }),
     Department.updateOne({ code: 'CE' }, { hod: userByEmail.get('hod.ce@mtu.edu.et')._id }),
     Department.updateOne({ code: 'IT' }, { hod: userByEmail.get('hod.it@mtu.edu.et')._id })
@@ -157,8 +157,6 @@ export async function seedSampleAcademicData() {
   const courseSpecs = [
     { code: 'CS401', title: 'Software Engineering', creditHours: 3, department: 'CS', level: '400', instructor: 'instructor.ada@mtu.edu.et', students: ['student.alex@mtu.edu.et'] },
     { code: 'CS305', title: 'Database Systems', creditHours: 3, department: 'CS', level: '300', instructor: 'instructor.kojo@mtu.edu.et', students: ['student.alex@mtu.edu.et'] },
-    { code: 'EE201', title: 'Circuit Analysis', creditHours: 4, department: 'EE', level: '200', instructor: 'instructor.meron.ee@mtu.edu.et', students: ['student.marta.ee@mtu.edu.et', 'student.eyob.ee@mtu.edu.et'] },
-    { code: 'EE310', title: 'Power Systems', creditHours: 3, department: 'EE', level: '300', instructor: 'instructor.yonas.ee@mtu.edu.et', students: ['student.marta.ee@mtu.edu.et'] },
     { code: 'ME220', title: 'Thermodynamics', creditHours: 3, department: 'ME', level: '200', instructor: 'instructor.samuel.me@mtu.edu.et', students: ['student.hana.me@mtu.edu.et', 'student.biruk.me@mtu.edu.et'] },
     { code: 'ME410', title: 'Machine Design', creditHours: 3, department: 'ME', level: '400', instructor: 'instructor.ruth.me@mtu.edu.et', students: ['student.biruk.me@mtu.edu.et'] },
     { code: 'CE230', title: 'Structural Analysis', creditHours: 3, department: 'CE', level: '200', instructor: 'instructor.bekele.ce@mtu.edu.et', students: ['student.selam.ce@mtu.edu.et', 'student.robel.ce@mtu.edu.et'] },
@@ -202,27 +200,38 @@ export async function seedSampleAcademicData() {
 export async function seedDemoData({ reset = false } = {}) {
   if (reset) {
     await Promise.all([
-      Department.deleteMany({}), Semester.deleteMany({}), Course.deleteMany({}),
-      User.deleteMany({}), InstructorAssignment.deleteMany({}),
-      EvaluationTemplate.deleteMany({}), EvaluationKey.deleteMany({})
+      AuditLog.deleteMany({}), CoursePreference.deleteMany({}), Evaluation.deleteMany({}),
+      EvaluationTemplate.deleteMany({}), ExamCommittee.deleteMany({}),
+      InstructorAssignment.deleteMany({}), Notification.deleteMany({}), Report.deleteMany({}),
+      Schedule.deleteMany({}), StreamPreference.deleteMany({}), StreamSelectionRound.deleteMany({}),
+      Student.deleteMany({}), Course.deleteMany({}), Semester.deleteMany({}),
+      Department.deleteMany({}), User.deleteMany({})
     ]);
   }
 
   await seedEvaluationTemplates();
 
   if (!reset && await User.exists({})) {
+    const admin = await User.findOne({ email: 'admin@mtu.edu.et', role: 'SUPER_ADMIN' });
+    if (admin) {
+      admin.passwordHash = await User.hashPassword('admin12345');
+      admin.username ||= admin.email.split('@')[0];
+      admin.isActive = true;
+      await admin.save();
+    }
     return false;
   }
 
   const passwordHash = await User.hashPassword('Password123!');
+  const adminPasswordHash = await User.hashPassword('admin12345');
   const department = await Department.create({ name: 'Computer Science', code: 'CS', faculty: 'Engineering and Technology' });
   const users = await User.create([
-    { firstName: 'Mira', lastName: 'Admin', email: 'admin@mtu.edu.et', passwordHash, role: 'SUPER_ADMIN' },
-    { firstName: 'Nadia', lastName: 'Head', email: 'hod.cs@mtu.edu.et', passwordHash, role: 'HOD', department: department._id, employeeNumber: 'HOD-001' },
-    { firstName: 'Sam', lastName: 'Committee', email: 'committee.cs@mtu.edu.et', passwordHash, role: 'EXAM_COMMITTEE', department: department._id, employeeNumber: 'COM-001' },
-    { firstName: 'Ada', lastName: 'Mensah', email: 'instructor.ada@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, employeeNumber: 'INS-001' },
-    { firstName: 'Kojo', lastName: 'Annan', email: 'instructor.kojo@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_COMMITTEE'], department: department._id, employeeNumber: 'INS-002' },
-    { firstName: 'Alex', lastName: 'Student', email: 'student.alex@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'STU-001' }
+    { firstName: 'Mira', lastName: 'Admin', username: 'admin', email: 'admin@mtu.edu.et', passwordHash: adminPasswordHash, role: 'SUPER_ADMIN' },
+    { firstName: 'Nadia', lastName: 'Head', username: 'hod.cs', email: 'hod.cs@mtu.edu.et', passwordHash, role: 'HOD', department: department._id, employeeNumber: 'HOD-001' },
+    { firstName: 'Sam', lastName: 'Committee', username: 'committee.cs', email: 'committee.cs@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, employeeNumber: 'COM-001' },
+    { firstName: 'Ada', lastName: 'Mensah', username: 'instructor.ada', email: 'instructor.ada@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, employeeNumber: 'INS-001' },
+    { firstName: 'Kojo', lastName: 'Annan', username: 'instructor.kojo', email: 'instructor.kojo@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, employeeNumber: 'INS-002' },
+    { firstName: 'Alex', lastName: 'Student', username: 'student.alex', email: 'student.alex@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'STU-001' }
   ]);
   department.hod = users[1]._id;
   await department.save();
@@ -231,7 +240,6 @@ export async function seedDemoData({ reset = false } = {}) {
   const databaseSystems = await Course.create({ code: 'CS305', title: 'Database Systems', creditHours: 3, department: department._id, semester: semester._id, level: '300' });
   const assignment = await InstructorAssignment.create({ instructor: users[3]._id, course: softwareEngineering._id, semester: semester._id, enrolledStudents: [users[5]._id], assignedBy: users[2]._id, status: 'PUBLISHED' });
   await InstructorAssignment.create({ instructor: users[4]._id, course: databaseSystems._id, semester: semester._id, enrolledStudents: [users[5]._id], assignedBy: users[2]._id, status: 'PUBLISHED' });
-  await EvaluationKey.create({ keyHash: await bcrypt.hash('EVAL-CS401-2026', 12), student: users[5]._id, assignment: assignment._id, expiresAt: new Date('2027-01-31'), generatedBy: users[2]._id });
   await seedSampleAcademicData();
   return true;
 }

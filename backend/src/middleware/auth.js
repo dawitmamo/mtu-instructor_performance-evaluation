@@ -1,6 +1,7 @@
 import { User } from '../models/User.js';
 import { verifyAccessToken } from '../utils/tokens.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { syncUserCommitteeMembership } from '../services/committeeMembership.js';
 
 export const authenticate = asyncHandler(async (req, res, next) => {
   const header = req.headers.authorization || '';
@@ -16,6 +17,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
   }
   const user = await User.findById(payload.sub).select('-passwordHash');
   if (!user || !user.isActive) return res.status(401).json({ message: 'Invalid session' });
+  await syncUserCommitteeMembership(user);
 
   req.user = user;
   return next();

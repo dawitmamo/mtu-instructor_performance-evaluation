@@ -54,7 +54,7 @@ async function ensureSelectionSemester() {
 async function upsertSampleUser(email, payload) {
   return User.findOneAndUpdate(
     { email },
-    { ...payload, email, isEmailVerified: true, isActive: true },
+    { ...payload, username: email.split('@')[0], email, isActive: true },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
 }
@@ -121,11 +121,11 @@ export async function seedEceSampleData(options = {}) {
     { department: department._id, semester: semester._id, members: committeeMembers, chair: committeeMembers[0], appointedBy: hod._id, status: 'ACTIVE' },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
-  await User.updateMany({ _id: { $in: committeeMembers } }, { $addToSet: { committeeRoles: 'EXAM_COMMITTEE' } });
+  await User.updateMany({ _id: { $in: committeeMembers } }, { $addToSet: { committeeRoles: 'COURSE_EXAM_COMMITTEE' } });
   const removedMembers = (previousCommittee?.members || []).filter((member) => !committeeMembers.some((selected) => String(selected) === String(member)));
   for (const member of removedMembers) {
     const stillAppointed = await ExamCommittee.exists({ _id: { $ne: committee._id }, status: 'ACTIVE', members: member });
-    if (!stillAppointed) await User.updateOne({ _id: member }, { $pull: { committeeRoles: 'EXAM_COMMITTEE' } });
+    if (!stillAppointed) await User.updateOne({ _id: member }, { $pull: { committeeRoles: 'COURSE_EXAM_COMMITTEE' } });
   }
 
   await ExamCommittee.findOneAndUpdate(
@@ -174,7 +174,7 @@ export async function seedEceSampleData(options = {}) {
     courses: courseSpecs.length,
     assignments: assignments.length,
     schedules: 1,
-    examCommitteeMembers: committeeMembers.length,
+    courseExamCommitteeMembers: committeeMembers.length,
     streamSelectionRound: selectionRound.status,
     streamCapacity: selectionRound.capacities.reduce((total, item) => total + item.seats, 0)
   };

@@ -19,7 +19,7 @@ function auth(user) {
   return { Authorization: `Bearer ${signAccessToken(user)}` };
 }
 
-function csvRow({ email, departmentId, firstName = 'Imported', lastName = 'Student', studentNumber = 'EE-CSV-1' }) {
+function csvRow({ email, departmentId, firstName = 'Imported', lastName = 'Student', studentNumber = 'ME-CSV-1' }) {
   return [
     'firstName,lastName,email,studentNumber,department',
     `${firstName},${lastName},${email},${studentNumber},${departmentId}`
@@ -51,14 +51,14 @@ afterAll(async () => {
 beforeEach(async () => {
   await Promise.all([User.deleteMany({}), Department.deleteMany({})]);
   [department, foreignDepartment] = await Department.create([
-    { name: 'Electrical Engineering', code: 'EE', faculty: 'Engineering' },
+    { name: 'Mechanical Engineering', code: 'ME', faculty: 'Engineering' },
     { name: 'Civil Engineering', code: 'CE', faculty: 'Engineering' }
   ]);
   const passwordHash = await User.hashPassword('OriginalPassword123!');
   [hod, instructor, student] = await User.create([
     { firstName: 'Department', lastName: 'Head', email: 'upload.hod@mtu.edu.et', passwordHash, role: 'HOD', department: department._id },
     { firstName: 'Existing', lastName: 'Instructor', email: 'existing.instructor@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id },
-    { firstName: 'Existing', lastName: 'Student', email: 'existing.student@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'EE-OLD' }
+    { firstName: 'Existing', lastName: 'Student', email: 'existing.student@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'ME-OLD' }
   ]);
 });
 
@@ -91,12 +91,12 @@ test('updating a student by CSV preserves the current password unless a new pass
   await request(app)
     .post('/api/uploads/students')
     .set(auth(hod))
-    .attach('file', Buffer.from(csvRow({ email: student.email, departmentId: department.id, firstName: 'Updated', studentNumber: 'EE-NEW' })), 'students.csv')
+    .attach('file', Buffer.from(csvRow({ email: student.email, departmentId: department.id, firstName: 'Updated', studentNumber: 'ME-NEW' })), 'students.csv')
     .expect(201);
 
   const updated = await User.findById(student.id);
   expect(updated.firstName).toBe('Updated');
-  expect(updated.studentNumber).toBe('EE-NEW');
+  expect(updated.studentNumber).toBe('ME-NEW');
   const login = await request(app).post('/api/auth/login').send({ email: student.email, password: 'OriginalPassword123!' }).expect(200);
   expect(login.body.user.role).toBe('STUDENT');
 });

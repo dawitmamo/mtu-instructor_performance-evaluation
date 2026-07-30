@@ -28,13 +28,13 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => { localStorage.setItem('darkMode', String(darkMode)); }, [darkMode]);
-  const login = async (email, password) => {
-    const data = await loginRequest(email, password);
+  const login = async (email, password, userType, department) => {
+    const data = await loginRequest(email, password, userType, department);
     setUser(data.user);
     return data.user;
   };
   const logout = () => { clearSession(); setUser(null); };
-  const value = useMemo(() => ({ user, loading, login, logout, darkMode, setDarkMode }), [user, loading, darkMode]);
+  const value = useMemo(() => ({ user, loading, login, logout, setCurrentUser: setUser, darkMode, setDarkMode }), [user, loading, darkMode]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

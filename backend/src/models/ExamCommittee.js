@@ -8,7 +8,7 @@ const examCommitteeSchema = new mongoose.Schema(
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
       validate: {
         validator: (members) => members.length === 3 && new Set(members.map(String)).size === 3,
-        message: 'An Exam Committee must contain exactly three different instructors'
+        message: 'A Course and Exam Committee must contain exactly three different instructors'
       }
     },
     chair: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

@@ -21,7 +21,7 @@ afterAll(async () => {
   await mongo.stop();
 });
 
-test('ECE seed is idempotent and creates four ten-student year cohorts with assignments and a three-member committee', async () => {
+test('ECE seed is idempotent and creates four ten-student year cohorts with assignments and a three-member Course and Exam Committee', async () => {
   await seedEceSampleData();
   await seedEceSampleData();
 
@@ -53,7 +53,7 @@ test('ECE seed is idempotent and creates four ten-student year cohorts with assi
   expect(committee.members).toHaveLength(3);
   expect(new Set(committee.members.map(String)).size).toBe(3);
   const members = await User.find({ _id: { $in: committee.members } });
-  expect(members.every((member) => member.role === 'INSTRUCTOR' && member.committeeRoles.includes('EXAM_COMMITTEE'))).toBe(true);
+  expect(members.every((member) => member.role === 'INSTRUCTOR' && member.committeeRoles.includes('COURSE_EXAM_COMMITTEE'))).toBe(true);
 
   const selectionRound = await StreamSelectionRound.findOne({ department: department._id }).populate('semester');
   expect(selectionRound.semester.name).toBe('Second Semester');

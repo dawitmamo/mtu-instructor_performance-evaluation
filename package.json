@@ -1,11 +1,11 @@
 {
-    "name": "university-instructor-performance-evaluation-system",
+    "name": "university-academic-management-and-instructor-performance-evaluation-system",
     "version": "1.0.0",
     "private": true,
     "engines": {
         "node": ">=20.19.0"
     },
-    "description": "MERN stack university instructor performance evaluation system.",
+    "description": "MERN stack university academic management and instructor performance evaluation system.",
     "workspaces": [
         "backend",
         "frontend"
@@ -18,8 +18,13 @@
         "seed:templates": "npm run seed:templates --workspace backend",
         "seed:samples": "npm run seed:samples --workspace backend",
         "seed:ece": "npm run seed:ece --workspace backend",
+        "reset:non-admin-passwords": "npm run reset:non-admin-passwords --workspace backend",
         "audit:data": "node backend/src/auditData.js",
-        "migrate:emails": "node backend/src/migrateEmailDomain.js"
+        "migrate:emails": "node backend/src/migrateEmailDomain.js",
+        "migrate:committees": "node backend/src/migrateCommitteeRoles.js",
+        "migrate:ece-department": "npm run migrate:ece-department --workspace backend",
+        "smoke:deployment": "npm run smoke:deployment --workspace backend",
+        "docs:pdf": "node docs/generateDocumentationPdf.js"
     },
     "devDependencies": {
         "concurrently": "^9.0.1"

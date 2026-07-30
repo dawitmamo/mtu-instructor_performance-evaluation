@@ -9,7 +9,9 @@ import { Semester } from '../models/Semester.js';
 import { Course } from '../models/Course.js';
 import { InstructorAssignment } from '../models/InstructorAssignment.js';
 import { EvaluationTemplate } from '../models/EvaluationTemplate.js';
-import { PeerEvaluation, HodEvaluation } from '../models/Evaluations.js';
+import { StudentEvaluation, PeerEvaluation, HodEvaluation } from '../models/Evaluations.js';
+import { Notification } from '../models/Notification.js';
+import { Report } from '../models/Report.js';
 
 let mongo;
 let app;
@@ -21,6 +23,7 @@ let ownAssignment;
 let foreignAssignment;
 let peerTemplate;
 let hodTemplate;
+let studentTemplate;
 
 function auth(user) {
   return { Authorization: `Bearer ${signAccessToken(user)}` };
@@ -49,8 +52,11 @@ beforeEach(async () => {
     Course.deleteMany({}),
     InstructorAssignment.deleteMany({}),
     EvaluationTemplate.deleteMany({}),
+    StudentEvaluation.deleteMany({}),
     PeerEvaluation.deleteMany({}),
-    HodEvaluation.deleteMany({})
+    HodEvaluation.deleteMany({}),
+    Notification.deleteMany({}),
+    Report.deleteMany({})
   ]);
   const [ownDepartment, foreignDepartment] = await Department.create([
     { name: 'Computing', code: 'COMP', faculty: 'Engineering' },
@@ -83,7 +89,8 @@ beforeEach(async () => {
     { instructor: ownInstructor._id, course: ownCourse._id, semester: semester._id, peerEvaluators: [peer._id], status: 'PUBLISHED' },
     { instructor: foreignInstructor._id, course: foreignCourse._id, semester: semester._id, status: 'PUBLISHED' }
   ]);
-  [peerTemplate, hodTemplate] = await EvaluationTemplate.create([
+  [studentTemplate, peerTemplate, hodTemplate] = await EvaluationTemplate.create([
+    { name: 'Student', kind: 'STUDENT', version: 1, categories: [{ name: 'Quality', questions: [{ text: 'Is prepared', order: 1 }] }] },
     { name: 'Peer', kind: 'PEER', version: 1, categories: [{ name: 'Quality', questions: [{ text: 'Is prepared', order: 1 }] }] },
     { name: 'HOD', kind: 'HOD', version: 1, categories: [{ name: 'Quality', questions: [{ text: 'Is prepared', order: 1 }] }] }
   ]);
@@ -137,13 +144,20 @@ test('peer evaluation requires an assigned target and the unchanged active templ
 });
 
 test('HOD target listing and submission are restricted to the HOD department', async () => {
+  const secondCourse = await Course.create({ code: 'COMP402', title: 'Networks', department: ownInstructor.department, semester: ownAssignment.semester });
+  const secondAssignment = await InstructorAssignment.create({
+    instructor: ownInstructor._id,
+    course: secondCourse._id,
+    semester: ownAssignment.semester,
+    status: 'PUBLISHED'
+  });
   const targets = await request(app)
     .get('/api/evaluations/targets/HOD')
     .set(auth(hod))
     .expect(200);
 
-  expect(targets.body.targets).toHaveLength(1);
-  expect(targets.body.targets[0]._id).toBe(ownAssignment.id);
+  expect(targets.body.targets).toHaveLength(2);
+  expect(targets.body.targets.map((item) => item._id)).toEqual(expect.arrayContaining([ownAssignment.id, secondAssignment.id]));
 
   await request(app)
     .post('/api/evaluations/hod')
@@ -156,9 +170,69 @@ test('HOD target listing and submission are restricted to the HOD department', a
     .set(auth(hod))
     .send({ assignment: ownAssignment.id, template: hodTemplate.id, responses: responses() })
     .expect(201);
+
+  await request(app)
+    .post('/api/evaluations/hod')
+    .set(auth(hod))
+    .send({ assignment: secondAssignment.id, template: hodTemplate.id, responses: responses() })
+    .expect(201);
+});
+
+test('published assignments notify students and peer evaluators with instructor and course names', async () => {
+  const student = await User.create({
+    firstName: 'Course', lastName: 'Student', email: 'course.student@mtu.edu.et',
+    passwordHash: await User.hashPassword('Password123!'), role: 'STUDENT', department: ownInstructor.department,
+    studentNumber: 'COMP-402-01'
+  });
+  const course = await Course.create({ code: 'COMP402', title: 'Networks', department: ownInstructor.department, semester: ownAssignment.semester });
+  const created = await request(app)
+    .post('/api/assignments')
+    .set(auth(hod))
+    .send({
+      instructor: ownInstructor.id,
+      course: course.id,
+      semester: String(ownAssignment.semester),
+      enrolledStudents: [student.id],
+      peerEvaluators: [peer.id],
+      status: 'PUBLISHED'
+    })
+    .expect(201);
+
+  const notifications = await Notification.find({ relatedAssignment: created.body.assignment._id });
+  expect(notifications).toHaveLength(2);
+  for (const notification of notifications) {
+    expect(notification.title).toContain('Own Instructor');
+    expect(notification.message).toContain('COMP402 - Networks');
+    expect(notification.type).toBe('EVALUATION');
+  }
+
+  const studentStatus = await request(app).get('/api/evaluations/student/status').set(auth(student)).expect(200);
+  expect(studentStatus.body.courses[0]).toMatchObject({
+    instructor: { firstName: 'Own', lastName: 'Instructor' },
+    course: { code: 'COMP402', title: 'Networks' }
+  });
+  expect(studentStatus.body.notifications[0].message).toContain('Own Instructor');
+  expect(studentStatus.body.notifications[0].message).toContain('COMP402 - Networks');
+
+  await request(app).post('/api/evaluations/student').set(auth(student)).send({
+    assignment: created.body.assignment._id,
+    template: studentTemplate.id,
+    responses: responses()
+  }).expect(201);
+  await request(app).post('/api/evaluations/student').set(auth(student)).send({
+    assignment: created.body.assignment._id,
+    template: studentTemplate.id,
+    responses: responses()
+  }).expect(409);
 });
 
 test('published final summary and notification are visible only on the instructor dashboard', async () => {
+  const assignedStudent = await User.create({
+    firstName: 'Assigned', lastName: 'Student', email: 'assigned.student@mtu.edu.et',
+    passwordHash: await User.hashPassword('Password123!'), role: 'STUDENT', department: ownInstructor.department,
+    studentNumber: 'COMP-401-01', yearLevel: 4, academicStream: 'COMPUTER_ENGINEERING'
+  });
+  await InstructorAssignment.updateOne({ _id: ownAssignment._id }, { $set: { enrolledStudents: [assignedStudent._id] } });
   const summary = 'Strong teaching performance. Continue peer mentoring and improve assessment turnaround time.';
   await request(app)
     .post(`/api/reports/instructor/${ownInstructor.id}/publish`)
@@ -178,8 +252,85 @@ test('published final summary and notification are visible only on the instructo
     .expect(200);
 
   expect(dashboard.body.finalReport.finalSummary).toBe(summary);
+  expect(dashboard.body.finalReport.courseResults[0]).toMatchObject({ courseCode: 'COMP401', courseTitle: 'Systems' });
   expect(dashboard.body.finalReport.publishedBy.role).toBe('HOD');
   expect(dashboard.body.notifications).toHaveLength(2);
   expect(dashboard.body.notifications.map((item) => item.type)).toEqual(expect.arrayContaining(['REPORT', 'REMINDER']));
+  expect(dashboard.body.assignedStudents).toHaveLength(1);
+  expect(dashboard.body.assignedStudents[0]).toMatchObject({ studentNumber: 'COMP-401-01', academicStream: 'COMPUTER_ENGINEERING' });
+  expect(dashboard.body.assignedStudents[0].courses[0].code).toBe('COMP401');
   expect(dashboard.body.comments).toBeUndefined();
+});
+
+test('report defaults to the newest semester with evaluations and returns calculated weighted values', async () => {
+  const student = await User.create({
+    firstName: 'Report', lastName: 'Student', email: 'report.student@mtu.edu.et',
+    passwordHash: await User.hashPassword('Password123!'), role: 'STUDENT', department: ownInstructor.department,
+    studentNumber: 'COMP-REPORT-01'
+  });
+  const baseEvaluation = {
+    instructor: ownInstructor._id,
+    course: ownAssignment.course,
+    assignment: ownAssignment._id,
+    semester: ownAssignment.semester,
+    department: ownInstructor.department
+  };
+  await Promise.all([
+    StudentEvaluation.create({ ...baseEvaluation, student: student._id, template: studentTemplate._id, responses: [{ category: 'Quality', question: 'Is prepared', score: 5 }] }),
+    PeerEvaluation.create({ ...baseEvaluation, evaluator: peer._id, template: peerTemplate._id, responses: [{ category: 'Quality', question: 'Is prepared', score: 4 }] }),
+    HodEvaluation.create({ ...baseEvaluation, evaluator: hod._id, template: hodTemplate._id, responses: [{ category: 'Quality', question: 'Is prepared', score: 3 }] })
+  ]);
+  const laterSemester = await Semester.create({
+    name: 'Later unrelated semester',
+    academicYear: '2027/2028',
+    startsAt: new Date(Date.now() + 86400000 * 60),
+    endsAt: new Date(Date.now() + 86400000 * 120),
+    evaluationOpensAt: new Date(Date.now() + 86400000 * 80),
+    evaluationClosesAt: new Date(Date.now() + 86400000 * 100),
+    status: 'PLANNED'
+  });
+  const laterCourse = await Course.create({
+    code: 'COMP501', title: 'Future Systems', department: ownInstructor.department, semester: laterSemester._id
+  });
+  await InstructorAssignment.create({
+    instructor: ownInstructor._id,
+    course: laterCourse._id,
+    semester: laterSemester._id,
+    status: 'DRAFT'
+  });
+
+  const response = await request(app)
+    .get(`/api/reports/instructor/${ownInstructor.id}`)
+    .set(auth(hod))
+    .expect(200);
+
+  expect(response.body.semester._id).toBe(String(ownAssignment.semester));
+  expect(response.body.semester._id).not.toBe(laterSemester.id);
+  expect(response.body.availableSemesters.map((item) => item._id)).toEqual([laterSemester.id, String(ownAssignment.semester)]);
+  expect(response.body.evaluationCounts).toEqual({ student: 1, peer: 1, hod: 1, total: 3 });
+  expect(response.body.scores).toMatchObject({
+    studentScore: 5,
+    studentWeighted: 2,
+    peerScore: 4,
+    peerWeighted: 1.2,
+    hodScore: 3,
+    hodWeighted: 0.9,
+    overall: 4.1
+  });
+  expect(response.body.courseResults[0].finalScore).toBe(4.1);
+});
+
+test('CSV report exports neutralize spreadsheet formulas in user-controlled cells', async () => {
+  ownInstructor.firstName = '=2+2';
+  ownInstructor.lastName = 'Bad"\r\nInjected';
+  await ownInstructor.save();
+
+  const response = await request(app)
+    .get(`/api/reports/instructor/${ownInstructor.id}/excel`)
+    .set(auth(hod))
+    .expect('Content-Type', /text\/csv/)
+    .expect(200);
+
+  expect(response.text).toContain("Instructor,\"'=2+2 Bad\"\"\r\nInjected\"");
+  expect(response.headers['content-disposition']).toBe('attachment; filename="Bad_Injected-evaluation.csv"');
 });

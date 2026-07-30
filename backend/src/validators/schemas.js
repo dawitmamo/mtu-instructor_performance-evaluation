@@ -20,7 +20,8 @@ const response = z
   .refine((value) => value.notApplicable || typeof value.score === 'number', { message: 'Score is required unless marked not applicable', path: ['score'] });
 
 const mtuEmail = z.string().trim().toLowerCase().email().refine(isMtuEmail, MTU_EMAIL_MESSAGE);
-const managedUserFields = { firstName: z.string().min(2), lastName: z.string().min(2), email: mtuEmail, role: z.enum(['SUPER_ADMIN', 'HOD', 'EXAM_COMMITTEE', 'INSTRUCTOR', 'STUDENT']), committeeRoles: z.array(z.enum(['COURSE_COMMITTEE', 'EXAM_COMMITTEE'])).max(2).optional().default([]), department: optionalObjectId, studentNumber: z.string().optional(), yearLevel: optionalYearLevel, gpa: optionalGpa, academicStream: optionalAcademicStream, employeeNumber: z.string().optional() };
+const username = z.string().trim().toLowerCase().min(3).max(50).regex(/^[a-z0-9._-]+$/, 'Username may contain lowercase letters, numbers, dots, underscores, and hyphens');
+const managedUserFields = { firstName: z.string().min(2), lastName: z.string().min(2), username: username.optional(), email: mtuEmail, role: z.enum(['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT']), committeeRoles: z.array(z.literal('COURSE_EXAM_COMMITTEE')).max(1).optional().default([]), department: optionalObjectId, studentNumber: z.string().optional(), yearLevel: optionalYearLevel, gpa: optionalGpa, academicStream: optionalAcademicStream, employeeNumber: z.string().optional() };
 const requireUserDepartment = (schema) => schema.superRefine((value, context) => {
   if (value.role !== 'SUPER_ADMIN' && !value.department) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Department is required for this role', path: ['department'] });
@@ -32,10 +33,23 @@ const requireUserDepartment = (schema) => schema.superRefine((value, context) =>
 
 export const authSchemas = {
   register: z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8) })) }),
-  login: z.object({ body: z.object({ email: mtuEmail, password: z.string().min(1) }) }),
+  login: z.object({ body: z.object({
+    username: z.string().trim().toLowerCase().min(1).max(100).optional(),
+    email: mtuEmail.optional(),
+    password: z.string().min(1),
+    userType: z.enum(['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT', 'COURSE_EXAM_COMMITTEE']).optional(),
+    department: optionalObjectId
+  }).refine((value) => value.username || value.email, { message: 'Username is required', path: ['username'] }) }),
   refresh: z.object({ body: z.object({ refreshToken: z.string().min(20) }) }),
   forgotPassword: z.object({ body: z.object({ email: mtuEmail }) }),
-  changePassword: z.object({ body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8) }) })
+  resetPassword: z.object({ body: z.object({ token: z.string().trim().min(32), newPassword: z.string().min(8) }) }),
+  changePassword: z.object({ body: z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8) }) }),
+  profile: z.object({ body: z.object({
+    firstName: z.string().trim().min(2).max(50),
+    lastName: z.string().trim().min(2).max(50),
+    phone: z.string().trim().max(30).optional().default(''),
+    bio: z.string().trim().max(500).optional().default('')
+  }) })
 };
 
 export const userUpdateSchema = z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8).optional().or(z.literal('')).transform((value) => value || undefined), isActive: z.boolean().optional() })) });
@@ -51,17 +65,23 @@ export const assignmentSchema = z.object({ body: z.object({
   instructor: objectId,
   course: objectId,
   semester: objectId,
+  enrollmentMode: z.enum(['COHORT', 'INDIVIDUAL']).optional().default('INDIVIDUAL'),
+  studentCohort: z.object({ yearLevel: z.coerce.number().int().min(2).max(5), academicStream: optionalAcademicStream }).optional(),
   enrolledStudents: z.array(objectId).default([]).refine((items) => new Set(items).size === items.length, 'A student can only appear once in an assignment'),
   peerEvaluators: z.array(objectId).default([]).refine((items) => new Set(items).size === items.length, 'A peer evaluator can only appear once in an assignment'),
   status: z.enum(['DRAFT', 'VERIFIED', 'PUBLISHED']).optional()
+}).superRefine((value, context) => {
+  if (value.enrollmentMode === 'COHORT' && !value.studentCohort) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Select a student class/cohort', path: ['studentCohort'] });
+  }
 }) });
 export const examCommitteeSchema = z.object({ body: z.object({
+  department: objectId.optional(),
   semester: objectId,
   members: z.array(objectId).length(3, 'Select exactly three instructors').refine((members) => new Set(members).size === 3, 'Select three different instructors'),
   chair: objectId
 }).refine((value) => value.members.includes(value.chair), { message: 'The chair must be one of the three selected instructors', path: ['chair'] }) });
-export const keyGenerationSchema = z.object({ body: z.object({ assignment: objectId, expiresAt: z.coerce.date() }) });
-export const studentEvaluationSchema = z.object({ body: z.object({ assignment: objectId, evaluationKey: z.string().min(8), template: objectId.optional(), responses: z.array(response).min(1), anonymousComment: z.string().max(2000).optional() }) });
+export const studentEvaluationSchema = z.object({ body: z.object({ assignment: objectId, template: objectId.optional(), responses: z.array(response).min(1), anonymousComment: z.string().max(2000).optional() }) });
 export const peerEvaluationSchema = z.object({ body: z.object({ assignment: objectId, template: objectId.optional(), responses: z.array(response).min(1), anonymousComment: z.string().max(2000).optional() }) });
 export const hodEvaluationSchema = peerEvaluationSchema;
 export const reportParamsSchema = z.object({ params: z.object({ instructorId: objectId }), query: z.object({ semester: objectId.optional() }) });
@@ -93,3 +113,16 @@ export const streamPreferenceSchema = z.object({ body: z.object({
   round: objectId,
   choices: z.array(z.enum(ACADEMIC_STREAMS)).length(3).refine((items) => new Set(items).size === 3, 'Select three different streams')
 }) });
+
+export const coursePreferenceSchema = z.object({ body: z.object({
+  semester: objectId,
+  choices: z.array(objectId).min(1, 'Select at least one course').max(3, 'Select no more than three courses')
+    .refine((items) => new Set(items).size === items.length, 'Select different courses')
+}) });
+
+export const coursePreferenceDecisionSchema = z.object({
+  params: z.object({ id: objectId }),
+  body: z.object({ course: objectId, note: z.string().trim().min(5, 'State the criteria used for this decision').max(1000) })
+});
+
+export const coursePreferenceResetSchema = z.object({ body: z.object({ semester: objectId }) });

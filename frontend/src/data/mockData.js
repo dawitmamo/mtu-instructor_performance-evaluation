@@ -1,4 +1,4 @@
-export const roles = ['SUPER_ADMIN', 'HOD', 'EXAM_COMMITTEE', 'INSTRUCTOR', 'STUDENT'];
+export const roles = ['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT'];
 
 export const demoUser = {
   name: 'Mira Admin',

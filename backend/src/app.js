@@ -14,6 +14,7 @@ import { dashboardRoutes } from './routes/dashboardRoutes.js';
 import { uploadRoutes } from './routes/uploadRoutes.js';
 import { streamSelectionRoutes } from './routes/streamSelectionRoutes.js';
 import { scheduleRoutes } from './routes/scheduleRoutes.js';
+import { coursePreferenceRoutes } from './routes/coursePreferenceRoutes.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { databaseStatus } from './config/db.js';
 
@@ -32,7 +33,7 @@ export function createApp() {
     res.status(database.connected ? 200 : 503).json({ status: database.connected ? 'ok' : 'degraded', service: 'uipes-api', database });
   });
   app.use('/api/auth', authRoutes);
-  app.use('/api', catalogRoutes, evaluationRoutes, reportRoutes, dashboardRoutes, uploadRoutes, streamSelectionRoutes, scheduleRoutes);
+  app.use('/api', catalogRoutes, evaluationRoutes, reportRoutes, dashboardRoutes, uploadRoutes, streamSelectionRoutes, scheduleRoutes, coursePreferenceRoutes);
   app.use(notFound);
   app.use(errorHandler);
   return app;

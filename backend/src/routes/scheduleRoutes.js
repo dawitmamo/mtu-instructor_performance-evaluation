@@ -17,7 +17,7 @@ function scheduleFileFilter(req, file, callback) {
 }
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 }, fileFilter: scheduleFileFilter });
-const managers = ['SUPER_ADMIN', 'HOD', 'COURSE_COMMITTEE', 'EXAM_COMMITTEE'];
+const managers = ['SUPER_ADMIN', 'HOD', 'COURSE_EXAM_COMMITTEE'];
 
 export const scheduleRoutes = Router();
 scheduleRoutes.use(authenticate);

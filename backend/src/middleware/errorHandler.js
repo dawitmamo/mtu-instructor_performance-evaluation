@@ -12,7 +12,9 @@ export function errorHandler(error, req, res, next) {
     message = 'This record already exists';
   } else if (error?.name === 'MulterError') {
     statusCode = 400;
-    message = error.code === 'LIMIT_FILE_SIZE' ? 'The upload must be 5 MB or smaller' : 'The uploaded file could not be processed';
+    message = error.code === 'LIMIT_FILE_SIZE'
+      ? (req.originalUrl.includes('/profile/photo') ? 'Profile photo must be 2 MB or smaller' : 'The upload must be 5 MB or smaller')
+      : 'The uploaded file could not be processed';
   } else if (error?.name === 'ValidationError' || error?.name === 'CastError') {
     statusCode = 400;
   }

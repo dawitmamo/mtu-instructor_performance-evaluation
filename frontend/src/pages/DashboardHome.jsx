@@ -7,36 +7,42 @@ import { AnalyticsCharts } from '../components/Charts.jsx';
 import { EvaluationForm, StaffEvaluationForm } from '../components/EvaluationForm.jsx';
 
 export function DashboardHome({ user }) {
+  const committeeMember = (user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const load = useCallback(async () => {
     setError('');
     try {
       if (user.role === 'STUDENT') setData(await getStudentEvaluationStatus());
-      else if (user.role === 'INSTRUCTOR') setData(await getInstructorDashboard());
+      else if (user.role === 'INSTRUCTOR' && !committeeMember) setData(await getInstructorDashboard());
       else setData(await getDashboardSummary());
     } catch (requestError) { setError(requestError.response?.data?.message || 'Dashboard data could not be loaded.'); }
-  }, [user.role]);
+  }, [user.role, committeeMember]);
   useEffect(() => { load(); }, [load]);
 
   if (error) return <div className='error-message'>{error}</div>;
   if (!data) return <div className='loading-state'>Loading live dashboard data...</div>;
-  if (user.role === 'STUDENT') return <EvaluationForm courses={data.courses} onSubmitted={load} />;
-  if (user.role === 'INSTRUCTOR') return <InstructorHome data={data} onSubmitted={load} />;
+  if (user.role === 'STUDENT') return <>
+    <EvaluationForm courses={data.courses} onSubmitted={load} />
+    <NotificationList notifications={data.notifications || []} title='Evaluation notifications' description='Evaluation requests from your HOD or Course and Exam Committee identify the instructor and course.' />
+  </>;
+  if (user.role === 'INSTRUCTOR' && !committeeMember) return <InstructorHome data={data} onSubmitted={load} />;
   return <AdminHome data={data} user={user} onSubmitted={load} />;
 }
 
 function AdminHome({ data, user, onSubmitted }) {
+  const committeeMember = (user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
   return <>
     <div className='stats-grid'>
       <StatCard label='Departments' value={data.totals.departments} helper='Active academic units' />
-      <StatCard label='Courses' value={data.totals.courses} helper='Stored in MongoDB' tone='teal' />
+      <StatCard label='Courses' value={data.totals.courses} helper='Available course data' tone='teal' />
       <StatCard label='Students' value={data.totals.students} helper='Eligible evaluators' tone='amber' />
       <StatCard label='Completion' value={data.evaluationCompletion + '%'} helper={data.pendingEvaluations + ' pending'} tone='rose' />
     </div>
     <AnalyticsCharts scores={data.averageScores} />
     {user.role === 'HOD' && <StaffEvaluationForm kind='HOD' title='Department Head Performance Evaluation' onSubmitted={onSubmitted} />}
-    {user.role === 'HOD' && <NotificationList notifications={data.notifications || []} title='Administrator notifications' description='University, department, and direct announcements sent by the administrator.' />}
+    {committeeMember && <StaffEvaluationForm kind='PEER' title='Assigned Peer Performance Evaluations' onSubmitted={onSubmitted} />}
+    {(user.role === 'HOD' || committeeMember) && <NotificationList notifications={data.notifications || []} title='Department notifications' description='University, department, and direct announcements available to your role.' />}
     <NotificationComposer user={user} />
   </>;
 }
@@ -89,6 +95,12 @@ function NotificationComposer({ user }) {
 
 function InstructorHome({ data, onSubmitted }) {
   const report = data.finalReport;
+  const studentScore = report?.sourceScores?.student ?? data.scores.studentScore;
+  const peerScore = report?.sourceScores?.peer ?? data.scores.peerScore;
+  const hodScore = report?.sourceScores?.hod ?? data.scores.hodScore;
+  const studentWeighted = report?.weightedContributions?.student ?? data.scores.studentWeighted;
+  const peerWeighted = report?.weightedContributions?.peer ?? data.scores.peerWeighted;
+  const hodWeighted = report?.weightedContributions?.hod ?? data.scores.hodWeighted;
   return <>
     <div className='stats-grid'>
       <StatCard label='Courses' value={data.assignments.length} helper='Assigned courses' />
@@ -96,6 +108,13 @@ function InstructorHome({ data, onSubmitted }) {
       <StatCard label='Peer tasks' value={data.peerTasks.length} helper='Assigned and pending' tone='amber' />
       <StatCard label='Final report' value={report ? report.overallScore : 'Pending'} helper={report ? 'Published score' : 'Awaiting HOD or committee'} tone='rose' />
     </div>
+    <section className='panel instructor-section'>
+      <div className='panel-title'><div><h2><UsersRound size={20} /> My students and streams</h2><p className='template-meta'>A single roster of students assigned to your courses, grouped by year and academic stream.</p></div><span>{(data.assignedStudents || []).length} students</span></div>
+      {(data.assignedStudents || []).length ? <div className='student-roster grouped-roster'>{groupStudents(data.assignedStudents).map(([label, students]) => <section className='student-group' key={label}><strong>{label} ({students.length})</strong>{students.map((student) => <div key={student._id}>
+        <span>{student.firstName} {student.lastName}</span>
+        <small>{student.studentNumber || 'No student number'} / {student.academicStream ? streamLabel(student.academicStream) : 'General program'} / {(student.courses || []).map((course) => course.code).join(', ') || 'Assigned course'}</small>
+      </div>)}</section>)}</div> : <div className='empty-state'>No students are assigned to your courses yet.</div>}
+    </section>
     <section className='panel instructor-section'>
       <div className='panel-title'><div><h2><BookOpenCheck size={20} /> Assigned courses and students</h2><p className='template-meta'>Only courses and student rosters assigned to your instructor account are shown.</p></div><span>{data.assignments.length} courses</span></div>
       {data.assignments.length ? <div className='course-roster-grid'>{data.assignments.map((assignment) => <article className='course-roster-card' key={assignment._id}>
@@ -115,15 +134,18 @@ function InstructorHome({ data, onSubmitted }) {
       <StaffEvaluationForm kind='PEER' title='Peer Performance Evaluation' onSubmitted={onSubmitted} />
     </section>
     <section className='panel instructor-section'>
-      <div className='panel-title'><div><h2><FileCheck2 size={20} /> My evaluation report</h2><p className='template-meta'>Your own evaluation results and the final summary published by your HOD or Exam Committee.</p></div><span>{report ? 'Final' : 'Not published'}</span></div>
+      <div className='panel-title'><div><h2><FileCheck2 size={20} /> My evaluation report</h2><p className='template-meta'>Your own evaluation results and the final summary published by your HOD or Course and Exam Committee.</p></div><span>{report ? 'Final' : 'Not published'}</span></div>
       <div className='report-summary'>
-        <div><small>Live overall</small><strong>{data.scores.overall}</strong></div>
-        <div><small>Student</small><strong>{report?.sourceScores?.student ?? data.scores.studentScore}</strong></div>
-        <div><small>Peer</small><strong>{report?.sourceScores?.peer ?? data.scores.peerScore}</strong></div>
-        <div><small>HOD</small><strong>{report?.sourceScores?.hod ?? data.scores.hodScore}</strong></div>
+        <div><small>Instructor</small><strong>{report?.instructor ? `${report.instructor.firstName} ${report.instructor.lastName}` : `${data.instructor.firstName} ${data.instructor.lastName}`}</strong></div>
+        <div><small>Course(s)</small><strong>{report?.courseResults?.map((item) => `${item.courseCode} - ${item.courseTitle}`).join(', ') || data.assignments.map((item) => `${item.course?.code} - ${item.course?.title}`).join(', ') || 'No assigned course'}</strong></div>
+        <div><small>Final result</small><strong>{report?.overallScore ?? data.scores.overall} / 5</strong></div>
+        <div><small>Student 40%</small><strong>{studentScore} × 40% = {studentWeighted}</strong></div>
+        <div><small>Peer 30%</small><strong>{peerScore} × 30% = {peerWeighted}</strong></div>
+        <div><small>HOD 30%</small><strong>{hodScore} × 30% = {hodWeighted}</strong></div>
         <div><small>Student completion</small><strong>{data.completionPercentage}%</strong></div>
         <div><small>Semester</small><strong>{report?.semester ? `${report.semester.name} ${report.semester.academicYear}` : 'Current'}</strong></div>
       </div>
+      {report?.courseResults?.length > 0 && <div className='key-results'><p>Final results by course</p>{report.courseResults.map((item) => <div key={item.assignment || item._id}><strong>{item.courseCode} - {item.courseTitle}</strong><code>{item.finalScore} / 5</code></div>)}</div>}
       {report ? <>
         <div className='final-summary'>
           <span>Final summary</span>
@@ -131,7 +153,7 @@ function InstructorHome({ data, onSubmitted }) {
           <small>Published by {report.publishedBy ? `${report.publishedBy.firstName} ${report.publishedBy.lastName} (${report.publishedBy.role.replaceAll('_', ' ')})` : 'the department'} on {report.publishedAt ? new Date(report.publishedAt).toLocaleDateString() : 'the latest review date'}.</small>
         </div>
         {report.recommendations?.length > 0 && <div className='recommendation-list'><strong>Recommendations</strong>{report.recommendations.map((item) => <p key={item}>{item}</p>)}</div>}
-      </> : <div className='empty-state'>Your live scores will remain visible here. The signed final summary will appear after your HOD or Exam Committee publishes it.</div>}
+      </> : <div className='empty-state'>Your live scores will remain visible here. The signed final summary will appear after your HOD or Course and Exam Committee publishes it.</div>}
       <AnalyticsCharts scores={data.radar} />
     </section>
     <NotificationList notifications={data.notifications} title='Notifications' description='Messages addressed to you by your department or the university.' />

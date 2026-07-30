@@ -7,8 +7,8 @@ function idOf(value) {
 }
 
 function canManage(user) {
-  return ['SUPER_ADMIN', 'HOD', 'EXAM_COMMITTEE'].includes(user.role)
-    || (user.committeeRoles || []).some((role) => ['COURSE_COMMITTEE', 'EXAM_COMMITTEE'].includes(role));
+  return ['SUPER_ADMIN', 'HOD'].includes(user.role)
+    || (user.committeeRoles || []).includes('COURSE_EXAM_COMMITTEE');
 }
 
 const typeLabels = { CLASS: 'Class schedule', EXAM: 'Exam schedule', COMBINED: 'Class and exam schedule' };
