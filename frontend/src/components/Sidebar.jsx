@@ -48,6 +48,7 @@ export function Sidebar({ activePage, onNavigate, databaseConnected }) {
     <div className='brand'>
       <img src={mtuLogo} alt='Mizan-Tepi University logo' />
       <div><strong>UAMIPES</strong><span>MTU Academic Evaluation Suite</span><small>Light of the Green Valley</small></div>
+      <button type='button' className='mobile-sign-out-button' onClick={logout} aria-label='Sign out of UAMIPES' title='Sign out'><LogOut size={20} /></button>
       <button type='button' className='sidebar-menu-button' onClick={() => setMobileOpen((open) => !open)} aria-expanded={mobileOpen} aria-controls='primary-navigation' aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
     </div>
     <nav id='primary-navigation'>{links}</nav>
