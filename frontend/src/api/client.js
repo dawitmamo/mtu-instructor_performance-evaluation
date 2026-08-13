@@ -3,21 +3,23 @@ import axios from 'axios';
 const baseURL = import.meta.env.VITE_API_URL || '/api';
 export const api = axios.create({ baseURL, timeout: 15000 });
 const refreshClient = axios.create({ baseURL, timeout: 15000 });
-const publicAuthPaths = ['/auth/login', '/auth/departments', '/auth/forgot-password', '/auth/reset-password'];
+const publicAuthPaths = ['/auth/login', '/auth/signup', '/auth/departments', '/auth/forgot-password', '/auth/reset-password'];
+const accessTokenKey = 'accessToken';
+const refreshTokenKey = 'refreshToken';
 
 function isPublicAuthRequest(url = '') {
   return publicAuthPaths.some((path) => url.includes(path));
 }
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
+  const token = sessionStorage.getItem(accessTokenKey);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 api.interceptors.response.use(undefined, async (error) => {
   const request = error.config;
-  const refreshToken = localStorage.getItem('refreshToken');
+  const refreshToken = sessionStorage.getItem(refreshTokenKey);
   if (error.response?.status === 401 && refreshToken && !request?._retried && !isPublicAuthRequest(request?.url)) {
     request._retried = true;
     try {
@@ -34,12 +36,21 @@ api.interceptors.response.use(undefined, async (error) => {
 });
 
 export function saveSession(data) {
-  localStorage.setItem('accessToken', data.accessToken);
-  localStorage.setItem('refreshToken', data.refreshToken);
+  localStorage.removeItem(accessTokenKey);
+  localStorage.removeItem(refreshTokenKey);
+  sessionStorage.setItem(accessTokenKey, data.accessToken);
+  sessionStorage.setItem(refreshTokenKey, data.refreshToken);
 }
 export function clearSession() {
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('refreshToken');
+  sessionStorage.removeItem(accessTokenKey);
+  sessionStorage.removeItem(refreshTokenKey);
+  localStorage.removeItem(accessTokenKey);
+  localStorage.removeItem(refreshTokenKey);
+}
+export function hasSession() { return Boolean(sessionStorage.getItem(accessTokenKey)); }
+export function clearLegacySharedSession() {
+  localStorage.removeItem(accessTokenKey);
+  localStorage.removeItem(refreshTokenKey);
 }
 export async function login(identifier, password, userType, department) {
   const normalized = identifier.trim().toLowerCase();
@@ -49,6 +60,7 @@ export async function login(identifier, password, userType, department) {
   return data;
 }
 export async function getLoginDepartments() { return (await api.get('/auth/departments')).data.departments; }
+export async function signup(payload) { return (await api.post('/auth/signup', payload)).data; }
 export async function changePassword(currentPassword, newPassword) {
   const { data } = await api.post('/auth/change-password', { currentPassword, newPassword });
   saveSession(data);
@@ -89,6 +101,7 @@ export async function downloadScheduleFile(id, fileName = 'schedule') {
 }
 export async function getStudentEvaluationStatus() { return (await api.get('/evaluations/student/status')).data; }
 export async function getEvaluationTemplate(kind) { return (await api.get(`/evaluation-templates/${kind}`)).data.template; }
+export async function saveHodEvaluationTemplate(payload) { return (await api.post('/evaluation-templates/hod', payload)).data; }
 export async function getEvaluationTargets(kind) { return (await api.get(`/evaluations/targets/${kind}`)).data.targets; }
 export async function getDepartments() { return (await api.get('/departments')).data.departments; }
 export async function getSemesters() { return (await api.get('/semesters')).data.semesters; }
@@ -102,6 +115,7 @@ export async function updateSemester(id, payload) { return (await api.put(`/seme
 export async function updateCourse(id, payload) { return (await api.put(`/courses/${id}`, payload)).data.course; }
 export async function updateAssignment(id, payload) { return (await api.put(`/assignments/${id}`, payload)).data.assignment; }
 export async function updateUser(id, payload) { return (await api.put(`/users/${id}`, payload)).data.user; }
+export async function reviewRegistration(id, status) { return (await api.patch(`/users/${id}/registration`, { status })).data; }
 export async function getCourses() { return (await api.get('/courses')).data.courses; }
 export async function getAssignments() { return (await api.get('/assignments')).data.assignments; }
 export async function getUsers(role) { return (await api.get('/users', { params: role ? { role } : {} })).data.users; }
@@ -128,17 +142,17 @@ export async function resetCourseAllocations(semester) { return (await api.post(
 export async function submitStudentEvaluation(payload) { return (await api.post('/evaluations/student', payload)).data; }
 export async function submitPeerEvaluation(payload) { return (await api.post('/evaluations/peer', payload)).data; }
 export async function submitHodEvaluation(payload) { return (await api.post('/evaluations/hod', payload)).data; }
-export async function getInstructorReport(instructorId, semester) {
-  return (await api.get(`/reports/instructor/${instructorId}`, { params: semester ? { semester } : {} })).data;
+export async function getInstructorReport(instructorId, semester, assignment) {
+  return (await api.get(`/reports/instructor/${instructorId}`, { params: { ...(semester ? { semester } : {}), ...(assignment ? { assignment } : {}) } })).data;
 }
-export async function publishInstructorReport(instructorId, finalSummary, semester) {
-  return (await api.post(`/reports/instructor/${instructorId}/publish`, { finalSummary }, { params: semester ? { semester } : {} })).data;
+export async function publishInstructorReport(instructorId, finalSummary, semester, assignment) {
+  return (await api.post(`/reports/instructor/${instructorId}/publish`, { finalSummary }, { params: { ...(semester ? { semester } : {}), ...(assignment ? { assignment } : {}) } })).data;
 }
 
-export async function downloadReport(instructorId, format, semester) {
+export async function downloadReport(instructorId, format, semester, assignment) {
   const endpoint = format === 'pdf' ? 'pdf' : 'excel';
   const response = await api.get(`/reports/instructor/${instructorId}/${endpoint}`, {
-    params: semester ? { semester } : {},
+    params: { ...(semester ? { semester } : {}), ...(assignment ? { assignment } : {}) },
     responseType: 'blob'
   });
   const url = URL.createObjectURL(response.data);

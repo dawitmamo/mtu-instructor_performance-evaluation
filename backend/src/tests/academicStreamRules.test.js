@@ -61,3 +61,27 @@ test('ECE instructors and upper-year students require a valid stream and assignm
   expect(unchangedStudent.yearLevel).toBe(4);
   expect(unchangedStudent.academicStream).toBe('COMPUTER_ENGINEERING');
 });
+
+test('recognizes the full Electrical and Computer Engineering department name and accepts all four streams', async () => {
+  department.code = 'ELCO';
+  await department.save();
+  const streams = [
+    'ELECTRONICS_COMMUNICATION_ENGINEERING',
+    'COMPUTER_ENGINEERING',
+    'POWER_ENGINEERING',
+    'CONTROL_ENGINEERING'
+  ];
+
+  await request(app).post('/api/auth/register').set(auth(hod)).send({
+    firstName: 'Missing', lastName: 'Stream', email: 'missing.stream@mtu.edu.et', password: 'Password123!', role: 'INSTRUCTOR', department: department.id
+  }).expect(400);
+
+  for (const [index, academicStream] of streams.entries()) {
+    await request(app).post('/api/auth/register').set(auth(hod)).send({
+      firstName: 'Stream', lastName: `Instructor${index + 1}`, email: `stream${index + 1}@mtu.edu.et`, password: 'Password123!',
+      role: 'INSTRUCTOR', department: department.id, academicStream
+    }).expect(201);
+  }
+
+  expect(await User.countDocuments({ department: department._id, role: 'INSTRUCTOR' })).toBe(4);
+});

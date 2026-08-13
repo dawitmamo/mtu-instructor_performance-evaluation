@@ -18,11 +18,12 @@ const StreamSelectionPage = lazy(() => import('./StreamSelectionPage.jsx').then(
 const SchedulesPage = lazy(() => import('./SchedulesPage.jsx').then((module) => ({ default: module.SchedulesPage })));
 const CoursePreferencesPage = lazy(() => import('./CoursePreferencesPage.jsx').then((module) => ({ default: module.CoursePreferencesPage })));
 const ProfilePage = lazy(() => import('./ProfilePage.jsx').then((module) => ({ default: module.ProfilePage })));
+const PerformanceMetricsPage = lazy(() => import('./PerformanceMetricsPage.jsx').then((module) => ({ default: module.PerformanceMetricsPage })));
 
 const titles = {
   dashboard: 'Instructor Performance Evaluation',
   departments: 'Departments', semesters: 'Semesters', courses: 'Courses', 'course-assignments': 'Course Assignments', assignments: 'Evaluation Assignments', committees: 'Course and Exam Committee',
-  reports: 'Reports', users: 'Users', schedules: 'Schedules', 'stream-selection': 'Stream Selection', 'course-preferences': 'Course Preferences', profile: 'My Profile'
+  reports: 'Reports', users: 'Users', schedules: 'Schedules', 'stream-selection': 'Stream Selection', 'course-preferences': 'Course Preferences', 'performance-metrics': 'Performance Metrics', profile: 'My Profile'
 };
 
 export function Dashboard() {
@@ -56,5 +57,6 @@ function Page({ activePage, user }) {
   if (activePage === 'users') return <UsersPage />;
   if (activePage === 'stream-selection') return <StreamSelectionPage />;
   if (activePage === 'schedules') return <SchedulesPage user={user} />;
+  if (activePage === 'performance-metrics') return <PerformanceMetricsPage />;
   return <DashboardHome user={user} />;
 }

@@ -68,7 +68,7 @@ The system manages departments, semesters, users, courses, instructor assignment
 
 Four primary account roles are implemented: Super Admin, HOD, Instructor, and Student. An instructor may additionally receive the unified `COURSE_EXAM_COMMITTEE` duty. The HOD appoints exactly three active instructors from the department to this committee for a semester and selects one of the three as chair. Committee members retain instructor accounts while receiving department-scoped permissions for course, assignment, schedule, roster lookup, report, and stream-selection operations.
 
-Evaluation results use a five-point rating scale. Student evaluation contributes 50 percent, peer evaluation contributes 20 percent, and HOD evaluation contributes 30 percent when all sources are available. If one or more sources are unavailable, the application normalizes the total using only the weights of the available sources. Final reports contain source scores, category scores, strengths, weaknesses, recommendations, comments, and an official final summary published by the HOD or Course and Exam Committee.
+Evaluation responses use a five-point rating scale. Student evaluation contributes 40 percent, peer evaluation contributes 30 percent, and HOD evaluation contributes 30 percent to a final result reported out of 100 percent. If a source is unavailable, its fixed contribution remains zero until an evaluation is submitted. Final reports contain source scores, category scores, strengths, weaknesses, recommendations, comments, and an official final summary published by the HOD or Course and Exam Committee.
 
 The project uses the MERN stack: React and Vite in the browser, Express.js and Node.js for the API, and MongoDB with Mongoose for persistence. JSON Web Tokens provide access and refresh sessions. Zod validates API input, bcrypt protects passwords, and middleware provides rate limiting, security headers, MongoDB query sanitization, CORS enforcement, and audit logging.
 
@@ -473,7 +473,7 @@ The authorization middleware returns HTTP 403 with `Insufficient permissions` wh
 - Access token lifetime defaults to 15 minutes.
 - Refresh token lifetime defaults to 7 days.
 - Tokens contain the user identifier and token version.
-- The frontend stores tokens in browser local storage.
+- The frontend stores tokens in per-window browser session storage so a separate window starts on the sign-in page instead of inheriting another window's account.
 - Access tokens are sent as `Authorization: Bearer <token>`.
 - A failed protected request triggers one refresh attempt.
 - Logout removes both tokens and the current user state.
@@ -564,9 +564,9 @@ The HOD evaluation list contains unique, open instructor targets from courses in
 
 ## 7.9 Report generation and publication
 
-Report generation loads student, peer, and HOD evaluations for the selected instructor and semester. It calculates source averages, weighted overall score, and category averages. Categories with scores of at least 4 become strengths; categories below 3.2 become weaknesses. A recommendation is selected from the overall score band.
+Report generation loads student, peer, and HOD evaluations for one selected instructor course assignment in one semester. Evaluations from another course are never blended into that report. It calculates source averages, the weighted percentage result, and category averages. Categories with scores of at least 4 become strengths; categories below 3.2 become weaknesses. A recommendation is selected from the overall score band.
 
-HOD and committee users may publish a final summary for an instructor in the same department. Publication changes the report status to `PUBLISHED`, stores the author and date, and creates or updates an instructor notification. The instructor dashboard then displays the signed final summary, source scores, category visualization, recommendations, publication details, and department/university notifications.
+HOD and committee users may publish an independent final summary for each instructor course in the same department. Publication changes that course report to `PUBLISHED`, stores the author and date, and creates or updates an instructor notification identifying the course. The instructor can select each course report to see its source scores, category visualization, recommendations, publication details, and final summary.
 
 ## 7.10 Instructor dashboard
 
@@ -575,8 +575,8 @@ The instructor dashboard intentionally contains only instructor-relevant informa
 - Assigned course count and enrolled student count.
 - Assigned and pending peer-review tasks.
 - Final report status and score.
-- Consolidated students grouped by year and stream, with student number and course codes.
-- Individual assigned course cards with grouped student rosters.
+- Collapsed student class groups organized by year and stream; expanding a group reveals names, student numbers, email addresses, streams, and course codes.
+- Individual assigned course cards with the same expandable year/stream rosters.
 - The peer evaluation form for eligible tasks.
 - The instructor's own live results and published final summary.
 - Direct, department, and university notifications.
@@ -630,10 +630,14 @@ StudentScore = average(all student evaluation scores)
 PeerScore    = average(all peer evaluation scores)
 HODScore     = average(all HOD evaluation scores)
 
-Overall = (StudentScore * 0.40) + (PeerScore * 0.30) + (HODScore * 0.30)
+StudentContribution = (StudentScore / 5) * 40
+PeerContribution    = (PeerScore / 5) * 30
+HODContribution     = (HODScore / 5) * 30
+
+OverallPercentage = StudentContribution + PeerContribution + HODContribution
 ```
 
-The approved weights remain fixed. A source that has not submitted contributes zero until its evaluation is completed, so the displayed final result always shows the same 40/30/30 policy.
+The approved weights remain fixed and the final result is reported out of 100%. A source that has not submitted contributes zero until its evaluation is completed, so the displayed final result always shows the same 40/30/30 policy.
 
 ## 8.3 Category scores
 
@@ -643,10 +647,10 @@ Category scores combine every numeric response under the same category across th
 
 | Overall score | System recommendation |
 |---|---|
-| 4.50 or above | Sustain excellent teaching practice and mentor peers. |
-| 3.80-4.49 | Maintain strengths while refining lower scoring categories. |
-| 3.00-3.79 | Create a focused improvement plan with peer coaching. |
-| Below 3.00 | Schedule HOD support, teaching observation, and follow-up development actions. |
+| 90% or above | Sustain excellent teaching practice and mentor peers. |
+| 76%-89.99% | Maintain strengths while refining lower scoring categories. |
+| 60%-75.99% | Create a focused improvement plan with peer coaching. |
+| Below 60% | Schedule HOD support, teaching observation, and follow-up development actions. |
 
 ## 8.5 Student instrument
 
@@ -799,7 +803,7 @@ User --< AuditLog
 | PeerEvaluation | Peer discriminator | Unique evaluator/assignment |
 | HodEvaluation | HOD discriminator | Unique evaluator/assignment |
 | EvaluationTemplate | Questionnaire versions | Unique kind/version; active flag; ordered categories |
-| Report | Aggregated instructor result | Unique instructor/semester; draft/published; final summary |
+| Report | Course-specific instructor result | Unique instructor/semester/assignment; draft/published; final summary |
 | ExamCommittee | Unified Course and Exam Committee record | Exactly three instructors; unique department/semester; chair |
 | Notification | Staff communication | User/department/university audience; report notification unique |
 | Schedule | Department class/exam schedule | Type/status indexes; optional PDF/CSV buffer |
@@ -839,7 +843,7 @@ Each response stores category name, exact question text, optional score from 1 t
 
 ## 10.6 Index and integrity strategy
 
-Unique indexes enforce course code per semester, assignment identity, one student response per assignment, one peer/HOD response per evaluator-target-semester, one report per instructor-semester, one committee per department-semester, one stream round per department-semester, one preference per round-student, one course preference per instructor-semester, and one confirmed course owner per semester.
+Unique indexes enforce course code per semester, assignment identity, one student response per assignment, one peer/HOD response per evaluator-target-semester, one report per instructor-semester-course assignment, one committee per department-semester, one stream round per department-semester, one preference per round-student, one course preference per instructor-semester, and one confirmed course owner per semester.
 
 The `audit:data` command checks MTU email domains, ECE year/stream profiles, instructor streams, assignment department/year/stream relationships, unified committee accounts, exactly three valid committee members, schedules, and selection-round capacity summaries.
 
@@ -1002,7 +1006,7 @@ Recommended first-use sequence:
 2. Register HOD accounts from **Users** and assign each to a department.
 3. Return to **Departments** and link the appropriate HOD.
 4. Open **Semesters** and define academic/evaluation dates.
-5. Register users manually or import Student/Instructor records.
+5. Register users manually or import Student/Instructor records. The **Users** directory can be searched by name, email, username, or institutional ID and filtered by department or role.
 6. Review **Courses** and **Assignments** across departments.
 7. Use **Schedules** to publish institutionally prepared department schedules.
 8. Use the dashboard notification composer for university, department, or direct staff announcements.
@@ -1166,7 +1170,7 @@ The parser recognizes common header variants such as `First`, `First Name`, `Ema
 
 ## 13.7 Report export
 
-Instructor report PDF includes instructor, department, semester, overall score, source scores, category scores, final summary when published, and recommendations. The `/excel` endpoint returns a UTF-8 CSV file containing the same summary values; this opens in spreadsheet software but is not a native `.xlsx` workbook.
+Each instructor report export covers exactly one course assignment. The PDF uses the Mizan-Tepi University logo and branded header, department/faculty identity, instructor and course metadata, the 100% result, weighted source contributions, category performance bars, strengths, improvement areas, recommendations, feedback, publication summary, and page footers. The `/excel` endpoint returns a UTF-8 CSV organized into branded report details, score summary, category performance, and narrative sections; CSV cannot embed or style an image, but it carries the same university and department identity as text and opens in spreadsheet software.
 
 ## 13.8 Schedule file behavior
 
@@ -1309,15 +1313,15 @@ The supplied Compose file is for demonstration and local integration, not a hard
 
 ## 16.2 Session posture
 
-The browser stores both tokens in `localStorage`; Axios refreshes once after a protected request returns 401. Password change and reset increment `tokenVersion`, invalidating older access and refresh tokens. An authenticated password change returns and stores a fresh token pair, while account deactivation blocks later authenticated requests.
+The browser stores both tokens in `sessionStorage`; this preserves authentication across refreshes in the current window without sharing the signed-in profile with other windows. Axios refreshes once after a protected request returns 401. Password change and reset increment `tokenVersion`, invalidating older access and refresh tokens. An authenticated password change returns and stores a fresh token pair, while account deactivation blocks later authenticated requests.
 
-Local-storage tokens are exposed if malicious script runs in the origin. A higher-assurance release should use a Secure, HttpOnly, SameSite refresh cookie, short-lived in-memory access tokens, rotation, logout/revocation, and a tested Content Security Policy.
+Session-storage tokens are exposed if malicious script runs in the origin. A higher-assurance release should use a Secure, HttpOnly, SameSite refresh cookie, short-lived in-memory access tokens, rotation, logout/revocation, and a tested Content Security Policy.
 
 ## 16.3 Password recovery and delivery limitation
 
 The forgot-password endpoint uses a non-enumerating response and stores only a SHA-256 hash of a cryptographically random token valid for 30 minutes. The reset endpoint accepts an unexpired token once, replaces the password, clears the token fields, and increments `tokenVersion` to invalidate older sessions. Invalid, expired, and previously used tokens are rejected.
 
-SMTP delivery is not implemented in this repository. Development and test responses expose the raw reset token so developers can verify the workflow locally. Production responses never expose the token; institutional deployment must connect the generated token to an approved email or messaging service and send a frontend link such as `/?resetToken=<token>`.
+When SMTP is configured, the forgot-password endpoint emails a secure frontend link containing the single-use token. Development and test responses still expose the raw reset token so developers can verify the workflow locally when SMTP is unavailable. Production responses never expose the token, and an undeliverable production token is invalidated instead of being left active.
 
 ## 16.4 Confidentiality and audit limits
 
@@ -1378,16 +1382,16 @@ Backend tests use Jest, Supertest, and `mongodb-memory-server`, running serially
 
 ## 17.4 Score verification
 
-For student 4.20, peer 3.80, and HOD 4.00:
+For student 4.20, peer 3.80, and HOD 4.00, the final result is 80.40%:
 
 ```text
-(4.20 x 0.40) + (3.80 x 0.30) + (4.00 x 0.30) = 4.02
+(4.20 / 5 x 40) + (3.80 / 5 x 30) + (4.00 / 5 x 30) = 80.40%
 ```
 
 If peer is absent, its fixed 30% contribution is zero:
 
 ```text
-(4.20 x 0.40) + (0.00 x 0.30) + (4.00 x 0.30) = 2.88
+(4.20 / 5 x 40) + (0.00 / 5 x 30) + (4.00 / 5 x 30) = 57.60%
 ```
 
 Results are rounded to two decimals. Not-applicable responses are excluded from their evaluation average.
@@ -1469,7 +1473,7 @@ Preserve logs and affected IDs before restarting a production service. Never del
 ## 20.1 Current limitations
 
 - Password reset completion is implemented, but production email/SMS delivery is not connected.
-- Tokens use browser local storage; cookie-based refresh sessions are stronger.
+- Tokens use per-window browser session storage; HttpOnly cookie-based refresh sessions provide stronger protection from same-origin scripts.
 - There is no logout/revocation endpoint, refresh rotation, MFA, or SSO.
 - Audit logs are best-effort MongoDB records, not immutable.
 - Evaluations are not anonymous to privileged database operators.

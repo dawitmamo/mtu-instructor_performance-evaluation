@@ -16,7 +16,7 @@ test('production requires distinct strong JWT secrets', () => {
   expect(() => validateRuntimeConfig(base)).not.toThrow();
 });
 
-test('production does not require SMTP while email verification is disabled', () => {
+test('production can start with SMTP notifications disabled or configured later', () => {
   expect(() => validateRuntimeConfig({
     nodeEnv: 'production',
     jwtAccessSecret: 'a'.repeat(32),

@@ -18,6 +18,7 @@ services:
       MONGO_MEMORY_FALLBACK: false
       SEED_DEMO_DATA: false
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5173}
+      TRUST_PROXY: 1
     depends_on:
       - mongo
     ports:

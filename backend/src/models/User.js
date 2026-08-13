@@ -40,6 +40,14 @@ const userSchema = new mongoose.Schema(
     employeeNumber: { type: String, trim: true },
     phone: { type: String, trim: true, maxlength: 30 },
     bio: { type: String, trim: true, maxlength: 500 },
+    registrationStatus: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'APPROVED',
+      index: true
+    },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    reviewedAt: Date,
     profilePhoto: {
       data: { type: Buffer, select: false },
       contentType: { type: String, enum: ['image/jpeg', 'image/png', 'image/webp'] },
@@ -57,6 +65,11 @@ const userSchema = new mongoose.Schema(
 userSchema.virtual('name').get(function getName() {
   return `${this.firstName} ${this.lastName}`;
 });
+
+userSchema.index(
+  { department: 1, role: 1, isActive: 1, registrationStatus: 1 },
+  { name: 'user_department_recipient_lookup' }
+);
 
 userSchema.methods.comparePassword = function comparePassword(password) {
   return bcrypt.compare(password, this.passwordHash);

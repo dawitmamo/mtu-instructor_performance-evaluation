@@ -12,6 +12,7 @@ import { EvaluationTemplate } from '../models/EvaluationTemplate.js';
 import { StudentEvaluation, PeerEvaluation, HodEvaluation } from '../models/Evaluations.js';
 import { Notification } from '../models/Notification.js';
 import { Report } from '../models/Report.js';
+import { EmailDelivery } from '../models/EmailDelivery.js';
 
 let mongo;
 let app;
@@ -56,6 +57,7 @@ beforeEach(async () => {
     PeerEvaluation.deleteMany({}),
     HodEvaluation.deleteMany({}),
     Notification.deleteMany({}),
+    EmailDelivery.deleteMany({}),
     Report.deleteMany({})
   ]);
   const [ownDepartment, foreignDepartment] = await Department.create([
@@ -178,6 +180,52 @@ test('HOD target listing and submission are restricted to the HOD department', a
     .expect(201);
 });
 
+test('HOD creates department criteria with weighted metrics and submissions snapshot their values', async () => {
+  await request(app)
+    .post('/api/evaluation-templates/hod')
+    .set(auth(peer))
+    .send({ name: 'Not allowed', categories: [{ name: 'Quality', metrics: [{ name: 'Metric', value: 1 }] }] })
+    .expect(403);
+
+  const created = await request(app)
+    .post('/api/evaluation-templates/hod')
+    .set(auth(hod))
+    .send({
+      name: 'Department weighted evaluation',
+      description: 'Department-specific performance criteria.',
+      categories: [
+        { name: 'Teaching', metrics: [{ name: 'Plans lessons', value: 3 }, { name: 'Explains clearly', value: 2 }] },
+        { name: 'Service', metrics: [{ name: 'Supports committees', value: 1 }] }
+      ]
+    })
+    .expect(201);
+
+  expect(created.body.template).toMatchObject({ kind: 'HOD', version: 1, department: String(hod.department) });
+  expect(created.body.template.categories[0].questions).toEqual([
+    { text: 'Plans lessons', order: 1, value: 3 },
+    { text: 'Explains clearly', order: 2, value: 2 }
+  ]);
+
+  const active = await request(app).get('/api/evaluation-templates/HOD').set(auth(hod)).expect(200);
+  expect(active.body.template._id).toBe(created.body.template._id);
+
+  const submitted = await request(app)
+    .post('/api/evaluations/hod')
+    .set(auth(hod))
+    .send({
+      assignment: ownAssignment.id,
+      template: created.body.template._id,
+      responses: [
+        { category: 'Teaching', question: 'Plans lessons', score: 5 },
+        { category: 'Teaching', question: 'Explains clearly', score: 4 },
+        { category: 'Service', question: 'Supports committees', score: 3 }
+      ]
+    })
+    .expect(201);
+  const evaluation = await HodEvaluation.findById(submitted.body.evaluationId);
+  expect(evaluation.responses.map((response) => response.value)).toEqual([3, 2, 1]);
+});
+
 test('published assignments notify students and peer evaluators with instructor and course names', async () => {
   const student = await User.create({
     firstName: 'Course', lastName: 'Student', email: 'course.student@mtu.edu.et',
@@ -199,12 +247,16 @@ test('published assignments notify students and peer evaluators with instructor 
     .expect(201);
 
   const notifications = await Notification.find({ relatedAssignment: created.body.assignment._id });
-  expect(notifications).toHaveLength(2);
-  for (const notification of notifications) {
+  const evaluationNotifications = notifications.filter((notification) => notification.type === 'EVALUATION');
+  expect(evaluationNotifications).toHaveLength(3);
+  for (const notification of evaluationNotifications) {
     expect(notification.title).toContain('Own Instructor');
     expect(notification.message).toContain('COMP402 - Networks');
-    expect(notification.type).toBe('EVALUATION');
   }
+  expect(notifications).toEqual(expect.arrayContaining([
+    expect.objectContaining({ user: ownInstructor._id, title: 'Course assigned - COMP402', type: 'INFO' })
+  ]));
+  expect(await EmailDelivery.countDocuments({ notification: { $in: notifications.map((notification) => notification._id) } })).toBe(4);
 
   const studentStatus = await request(app).get('/api/evaluations/student/status').set(auth(student)).expect(200);
   expect(studentStatus.body.courses[0]).toMatchObject({
@@ -252,6 +304,8 @@ test('published final summary and notification are visible only on the instructo
     .expect(200);
 
   expect(dashboard.body.finalReport.finalSummary).toBe(summary);
+  expect(dashboard.body.finalReports).toHaveLength(1);
+  expect(dashboard.body.courseReports[0].finalReport.finalSummary).toBe(summary);
   expect(dashboard.body.finalReport.courseResults[0]).toMatchObject({ courseCode: 'COMP401', courseTitle: 'Systems' });
   expect(dashboard.body.finalReport.publishedBy.role).toBe('HOD');
   expect(dashboard.body.notifications).toHaveLength(2);
@@ -287,7 +341,7 @@ test('report defaults to the newest semester with evaluations and returns calcul
     endsAt: new Date(Date.now() + 86400000 * 120),
     evaluationOpensAt: new Date(Date.now() + 86400000 * 80),
     evaluationClosesAt: new Date(Date.now() + 86400000 * 100),
-    status: 'PLANNED'
+    status: 'SCHEDULED'
   });
   const laterCourse = await Course.create({
     code: 'COMP501', title: 'Future Systems', department: ownInstructor.department, semester: laterSemester._id
@@ -310,14 +364,69 @@ test('report defaults to the newest semester with evaluations and returns calcul
   expect(response.body.evaluationCounts).toEqual({ student: 1, peer: 1, hod: 1, total: 3 });
   expect(response.body.scores).toMatchObject({
     studentScore: 5,
-    studentWeighted: 2,
+    studentWeighted: 40,
     peerScore: 4,
-    peerWeighted: 1.2,
+    peerWeighted: 24,
     hodScore: 3,
-    hodWeighted: 0.9,
-    overall: 4.1
+    hodWeighted: 18,
+    overall: 82
   });
-  expect(response.body.courseResults[0].finalScore).toBe(4.1);
+  expect(response.body.courseResults[0].finalScore).toBe(82);
+});
+
+test('keeps evaluation reports isolated per instructor course assignment', async () => {
+  const secondCourse = await Course.create({ code: 'COMP402', title: 'Networks', department: ownInstructor.department, semester: ownAssignment.semester });
+  const secondAssignment = await InstructorAssignment.create({
+    instructor: ownInstructor._id,
+    course: secondCourse._id,
+    semester: ownAssignment.semester,
+    status: 'PUBLISHED'
+  });
+  const [firstStudent, secondStudent] = await User.create([
+    { firstName: 'First', lastName: 'Student', email: 'first.report@mtu.edu.et', passwordHash: await User.hashPassword('Password123!'), role: 'STUDENT', department: ownInstructor.department, studentNumber: 'COMP-R-01' },
+    { firstName: 'Second', lastName: 'Student', email: 'second.report@mtu.edu.et', passwordHash: await User.hashPassword('Password123!'), role: 'STUDENT', department: ownInstructor.department, studentNumber: 'COMP-R-02' }
+  ]);
+  const evaluationBase = { instructor: ownInstructor._id, semester: ownAssignment.semester, department: ownInstructor.department, template: studentTemplate._id };
+  await Promise.all([
+    StudentEvaluation.create({ ...evaluationBase, course: ownAssignment.course, assignment: ownAssignment._id, student: firstStudent._id, responses: [{ category: 'Quality', question: 'Is prepared', score: 5 }] }),
+    StudentEvaluation.create({ ...evaluationBase, course: secondCourse._id, assignment: secondAssignment._id, student: secondStudent._id, responses: [{ category: 'Quality', question: 'Is prepared', score: 1 }] })
+  ]);
+
+  const firstReport = await request(app)
+    .get(`/api/reports/instructor/${ownInstructor.id}?assignment=${ownAssignment.id}`)
+    .set(auth(hod))
+    .expect(200);
+  const secondReport = await request(app)
+    .get(`/api/reports/instructor/${ownInstructor.id}?assignment=${secondAssignment.id}`)
+    .set(auth(hod))
+    .expect(200);
+
+  expect(firstReport.body.course.code).toBe('COMP401');
+  expect(firstReport.body.scores.overall).toBe(40);
+  expect(secondReport.body.course.code).toBe('COMP402');
+  expect(secondReport.body.scores.overall).toBe(8);
+  expect(secondReport.body.availableAssignments).toHaveLength(2);
+  expect(await Report.countDocuments({ instructor: ownInstructor._id, semester: ownAssignment.semester })).toBe(2);
+
+  const dashboard = await request(app).get('/api/dashboard/instructor').set(auth(ownInstructor)).expect(200);
+  expect(Object.fromEntries(dashboard.body.courseReports.map((item) => [item.course.code, item.scores.overall]))).toEqual({ COMP401: 40, COMP402: 8 });
+});
+
+test('PDF report is branded and generated for one selected course', async () => {
+  const response = await request(app)
+    .get(`/api/reports/instructor/${ownInstructor.id}/pdf?assignment=${ownAssignment.id}`)
+    .set(auth(hod))
+    .buffer(true)
+    .parse((responseStream, callback) => {
+      const chunks = [];
+      responseStream.on('data', (chunk) => chunks.push(chunk));
+      responseStream.on('end', () => callback(null, Buffer.concat(chunks)));
+    })
+    .expect('Content-Type', /application\/pdf/)
+    .expect(200);
+
+  expect(response.body.subarray(0, 4).toString()).toBe('%PDF');
+  expect(response.headers['content-disposition']).toBe('attachment; filename="Instructor-COMP401-evaluation.pdf"');
 });
 
 test('CSV report exports neutralize spreadsheet formulas in user-controlled cells', async () => {
@@ -332,5 +441,5 @@ test('CSV report exports neutralize spreadsheet formulas in user-controlled cell
     .expect(200);
 
   expect(response.text).toContain("Instructor,\"'=2+2 Bad\"\"\r\nInjected\"");
-  expect(response.headers['content-disposition']).toBe('attachment; filename="Bad_Injected-evaluation.csv"');
+  expect(response.headers['content-disposition']).toBe('attachment; filename="Bad_Injected-COMP401-evaluation.csv"');
 });

@@ -5,6 +5,8 @@ import { StreamPreference } from '../models/StreamPreference.js';
 import { StreamSelectionRound } from '../models/StreamSelectionRound.js';
 import { User } from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { Notification } from '../models/Notification.js';
+import { queueManyNotificationEmails } from '../services/notificationEmail.js';
 
 function sameId(first, second) {
   return String(first?._id || first) === String(second?._id || second);
@@ -130,6 +132,21 @@ export const saveStreamSelectionRound = asyncHandler(async (req, res) => {
     },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   );
+  if (status === 'OPEN' && existing?.status !== 'OPEN') {
+    const [semesterRecord, students] = await Promise.all([
+      Semester.findById(semester).select('name academicYear'),
+      User.find({ role: 'STUDENT', department: department._id, yearLevel: 3, isActive: true }).select('_id')
+    ]);
+    const notifications = students.length ? await Notification.insertMany(students.map((student) => ({
+      user: student._id,
+      audience: 'USER',
+      sender: req.user._id,
+      title: 'Stream selection is now open',
+      message: `Submit your ranked stream preferences for ${semesterRecord?.name || 'the semester'} ${semesterRecord?.academicYear || ''} from the Stream Selection page.`,
+      type: 'DEADLINE'
+    }))) : [];
+    await queueManyNotificationEmails(notifications);
+  }
   return res.status(existing ? 200 : 201).json({ round: await populateRound(StreamSelectionRound.findById(round._id)) });
 });
 
@@ -210,6 +227,16 @@ export const allocateStreams = asyncHandler(async (req, res) => {
   round.allocatedBy = req.user._id;
   round.allocatedAt = new Date();
   await round.save();
+
+  const notifications = await Notification.insertMany(results.map((result) => ({
+    user: result.preference.student._id || result.preference.student,
+    audience: 'USER',
+    sender: req.user._id,
+    title: 'Your academic stream was allocated',
+    message: `You were allocated to ${result.allocatedStream.replaceAll('_', ' ')}. This was preference rank ${result.allocationRank}.`,
+    type: 'INFO'
+  })));
+  await queueManyNotificationEmails(notifications);
 
   const allocatedPreferences = await populatePreferences(StreamPreference.find({ round: round._id }));
   return res.json({

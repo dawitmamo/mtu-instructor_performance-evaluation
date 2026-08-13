@@ -31,8 +31,29 @@ const requireUserDepartment = (schema) => schema.superRefine((value, context) =>
   }
 });
 
+const selfRegistration = z.object({
+  firstName: z.string().trim().min(2).max(50),
+  lastName: z.string().trim().min(2).max(50),
+  email: mtuEmail,
+  password: z.string().min(8),
+  role: z.enum(['INSTRUCTOR', 'STUDENT']),
+  department: objectId,
+  studentNumber: z.string().trim().max(50).optional(),
+  yearLevel: optionalYearLevel,
+  academicStream: optionalAcademicStream,
+  employeeNumber: z.string().trim().max(50).optional()
+}).superRefine((value, context) => {
+  if (value.role === 'STUDENT' && !value.studentNumber) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Student number is required', path: ['studentNumber'] });
+  }
+  if (value.role === 'STUDENT' && !value.yearLevel) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Grade/year level is required', path: ['yearLevel'] });
+  }
+});
+
 export const authSchemas = {
   register: z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8) })) }),
+  signup: z.object({ body: selfRegistration }),
   login: z.object({ body: z.object({
     username: z.string().trim().toLowerCase().min(1).max(100).optional(),
     email: mtuEmail.optional(),
@@ -53,6 +74,7 @@ export const authSchemas = {
 };
 
 export const userUpdateSchema = z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8).optional().or(z.literal('')).transform((value) => value || undefined), isActive: z.boolean().optional() })) });
+export const registrationReviewSchema = z.object({ body: z.object({ status: z.enum(['APPROVED', 'REJECTED']) }) });
 export const departmentSchema = z.object({ body: z.object({ name: z.string().min(2), code: z.string().min(2), faculty: z.string().min(2), hod: optionalObjectId }) });
 export const semesterSchema = z.object({ body: z.object({ name: z.string().min(2), academicYear: z.string().min(4), startsAt: z.coerce.date(), endsAt: z.coerce.date(), evaluationOpensAt: z.coerce.date().optional(), evaluationClosesAt: z.coerce.date().optional(), status: z.enum(['DRAFT', 'SCHEDULED', 'OPEN', 'CLOSED', 'ARCHIVED']).optional() }).superRefine((value, context) => {
   if (value.endsAt <= value.startsAt) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Semester end date must be after its start date', path: ['endsAt'] });
@@ -84,10 +106,28 @@ export const examCommitteeSchema = z.object({ body: z.object({
 export const studentEvaluationSchema = z.object({ body: z.object({ assignment: objectId, template: objectId.optional(), responses: z.array(response).min(1), anonymousComment: z.string().max(2000).optional() }) });
 export const peerEvaluationSchema = z.object({ body: z.object({ assignment: objectId, template: objectId.optional(), responses: z.array(response).min(1), anonymousComment: z.string().max(2000).optional() }) });
 export const hodEvaluationSchema = peerEvaluationSchema;
-export const reportParamsSchema = z.object({ params: z.object({ instructorId: objectId }), query: z.object({ semester: objectId.optional() }) });
-export const publishReportSchema = z.object({ params: z.object({ instructorId: objectId }), query: z.object({ semester: objectId.optional() }), body: z.object({ finalSummary: z.string().trim().min(10).max(4000) }) });
+const performanceMetric = z.object({
+  name: z.string().trim().min(2).max(300),
+  value: z.coerce.number().int().min(1).max(100)
+});
+const performanceCriterion = z.object({
+  name: z.string().trim().min(2).max(100),
+  metrics: z.array(performanceMetric).min(1).max(50)
+    .refine((metrics) => new Set(metrics.map((metric) => metric.name.toLowerCase())).size === metrics.length, 'Metric names must be unique within a criterion')
+});
+export const hodEvaluationTemplateSchema = z.object({
+  body: z.object({
+    name: z.string().trim().min(3).max(150),
+    description: z.string().trim().max(1000).optional().default(''),
+    categories: z.array(performanceCriterion).min(1).max(20)
+      .refine((categories) => new Set(categories.map((category) => category.name.toLowerCase())).size === categories.length, 'Criterion names must be unique')
+      .refine((categories) => categories.reduce((total, category) => total + category.metrics.length, 0) <= 200, 'A template can contain at most 200 metrics')
+  })
+});
+export const reportParamsSchema = z.object({ params: z.object({ instructorId: objectId }), query: z.object({ semester: objectId.optional(), assignment: objectId.optional() }) });
+export const publishReportSchema = z.object({ params: z.object({ instructorId: objectId }), query: z.object({ semester: objectId.optional(), assignment: objectId.optional() }), body: z.object({ finalSummary: z.string().trim().min(10).max(4000) }) });
 export const notificationSchema = z.object({ body: z.object({ title: z.string().trim().min(3).max(150), message: z.string().trim().min(5).max(2000), type: z.enum(['INFO', 'REMINDER', 'DEADLINE']).optional(), audience: z.enum(['USER', 'DEPARTMENT', 'UNIVERSITY']), user: objectId.optional(), department: objectId.optional() }).superRefine((value, context) => {
-  if (value.audience === 'USER' && !value.user) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Staff recipient is required', path: ['user'] });
+  if (value.audience === 'USER' && !value.user) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Recipient is required', path: ['user'] });
 }) });
 
 export const scheduleSchema = z.object({ body: z.object({

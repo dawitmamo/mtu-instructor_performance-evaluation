@@ -16,5 +16,6 @@ const courseSchema = new mongoose.Schema(
 );
 
 courseSchema.index({ code: 1, semester: 1 }, { unique: true });
+courseSchema.index({ department: 1, semester: 1 });
 
 export const Course = mongoose.model('Course', courseSchema);

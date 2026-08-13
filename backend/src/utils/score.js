@@ -3,6 +3,7 @@ export const EVALUATION_WEIGHTS = {
   peer: 0.3,
   hod: 0.3
 };
+const MAX_RESPONSE_SCORE = 5;
 
 export function average(values) {
   if (!values.length) return 0;
@@ -12,11 +13,14 @@ export function average(values) {
 function scoredValues(responses = []) {
   return responses
     .filter((response) => !response.notApplicable && typeof response.score === 'number')
-    .map((response) => response.score);
+    .map((response) => ({ score: response.score, value: Number(response.value) > 0 ? Number(response.value) : 1 }));
 }
 
 export function scoreResponses(responses = []) {
-  return average(scoredValues(responses));
+  const scored = scoredValues(responses);
+  const totalValue = scored.reduce((sum, response) => sum + response.value, 0);
+  if (!totalValue) return 0;
+  return scored.reduce((sum, response) => sum + (response.score * response.value), 0) / totalValue;
 }
 
 export function categoryScores(evaluations = []) {
@@ -25,13 +29,14 @@ export function categoryScores(evaluations = []) {
     evaluation.responses.forEach((response) => {
       if (response.notApplicable || typeof response.score !== 'number') return;
       if (!buckets.has(response.category)) buckets.set(response.category, []);
-      buckets.get(response.category).push(response.score);
+      buckets.get(response.category).push({ score: response.score, value: Number(response.value) > 0 ? Number(response.value) : 1 });
     });
   });
 
-  return [...buckets.entries()].map(([category, scores]) => ({
+  return [...buckets.entries()].map(([category, responses]) => ({
     category,
-    score: Number(average(scores).toFixed(2))
+    score: Number((responses.reduce((sum, response) => sum + (response.score * response.value), 0)
+      / responses.reduce((sum, response) => sum + response.value, 0)).toFixed(2))
   }));
 }
 
@@ -46,9 +51,9 @@ export function weightedOverall({ student = [], peer = [], hod = [] }) {
   const peerScore = average(evaluationScores(peer));
   const hodScore = average(evaluationScores(hod));
 
-  const studentWeighted = studentScore * EVALUATION_WEIGHTS.student;
-  const peerWeighted = peerScore * EVALUATION_WEIGHTS.peer;
-  const hodWeighted = hodScore * EVALUATION_WEIGHTS.hod;
+  const studentWeighted = (studentScore / MAX_RESPONSE_SCORE) * EVALUATION_WEIGHTS.student * 100;
+  const peerWeighted = (peerScore / MAX_RESPONSE_SCORE) * EVALUATION_WEIGHTS.peer * 100;
+  const hodWeighted = (hodScore / MAX_RESPONSE_SCORE) * EVALUATION_WEIGHTS.hod * 100;
   const overall = studentWeighted + peerWeighted + hodWeighted;
 
   return {

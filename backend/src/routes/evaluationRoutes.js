@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { audit } from '../middleware/audit.js';
 import { validate } from '../middleware/validate.js';
-import { hodEvaluationSchema, peerEvaluationSchema, studentEvaluationSchema } from '../validators/schemas.js';
-import { getEvaluationTemplate, listEvaluationTargets, studentEvaluationStatus, submitHodEvaluation, submitPeerEvaluation, submitStudentEvaluation } from '../controllers/evaluationController.js';
+import { hodEvaluationSchema, hodEvaluationTemplateSchema, peerEvaluationSchema, studentEvaluationSchema } from '../validators/schemas.js';
+import { getEvaluationTemplate, listEvaluationTargets, saveHodEvaluationTemplate, studentEvaluationStatus, submitHodEvaluation, submitPeerEvaluation, submitStudentEvaluation } from '../controllers/evaluationController.js';
 
 export const evaluationRoutes = Router();
 evaluationRoutes.use(authenticate);
 evaluationRoutes.get('/evaluation-templates/:kind', getEvaluationTemplate);
+evaluationRoutes.post('/evaluation-templates/hod', authorize('HOD'), validate(hodEvaluationTemplateSchema), audit('HOD_EVALUATION_TEMPLATE_SAVED'), saveHodEvaluationTemplate);
 evaluationRoutes.get('/evaluations/targets/:kind', authorize('INSTRUCTOR', 'HOD'), listEvaluationTargets);
 evaluationRoutes.post('/evaluations/student', authorize('STUDENT'), validate(studentEvaluationSchema), audit('STUDENT_EVALUATION_SUBMITTED'), submitStudentEvaluation);
 evaluationRoutes.post('/evaluations/peer', authorize('INSTRUCTOR'), validate(peerEvaluationSchema), audit('PEER_EVALUATION_SUBMITTED'), submitPeerEvaluation);

@@ -28,6 +28,9 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; background: var(--bg); }
+body:has(.login-page) { background: #0d8553; }
+body:has(.login-page.dark) { background: #0a432d; }
+#root { min-height: 100vh; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.68; }
@@ -326,6 +329,20 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .full-page-state, .loading-state { min-height: 180px; display: grid; place-items: center; color: var(--muted); }
 .staff-evaluation-panel { margin-top: 16px; }
 
+.metric-manager form, .criteria-list, .metric-list { display: grid; gap: 14px; }
+.metric-template-fields { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(300px, 1.2fr); gap: 14px; }
+.metric-template-fields label, .criterion-heading label, .metric-row label { display: grid; gap: 7px; }
+.criterion-card { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); border-radius: 20px; background: rgba(255,255,255,.38); }
+.dark .criterion-card { background: rgba(15,23,42,.28); }
+.criterion-heading { display: grid; grid-template-columns: minmax(240px, 1fr) auto; gap: 14px; align-items: end; }
+.criterion-heading > div { display: flex; align-items: center; gap: 10px; }
+.criterion-heading small, .metric-version-note { color: var(--muted); }
+.metric-row { display: grid; grid-template-columns: minmax(220px, 1fr) 110px 42px; gap: 10px; align-items: end; padding-top: 12px; border-top: 1px solid var(--border); }
+.metric-value input { text-align: center; }
+.metric-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.metric-version-note { margin: 0; font-size: 13px; }
+.icon-action:disabled { cursor: not-allowed; opacity: .35; transform: none; }
+
 .login-page {
   min-height: 100vh;
   display: grid;
@@ -473,6 +490,13 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .dark .db-status { background: rgba(154,52,18,0.18); color: #fed7aa; }
 
 .data-table { display: grid; gap: 10px; }
+.user-directory-toolbar { display: grid; grid-template-columns: minmax(240px, 1.3fr) repeat(3, minmax(150px, .7fr)) auto; gap: 12px; align-items: end; margin-bottom: 18px; padding: 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-strong); }
+.user-directory-toolbar label { display: grid; gap: 7px; }
+.user-directory-toolbar label > span { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.user-search-field > div { position: relative; display: flex; align-items: center; }
+.user-search-field svg { position: absolute; left: 13px; color: var(--muted); pointer-events: none; }
+.user-search-field input { width: 100%; padding-left: 39px; }
+.user-filter-clear { min-height: 43px; white-space: nowrap; }
 .data-row {
   display: grid;
   grid-template-columns: repeat(var(--data-columns, 4), minmax(0, 1fr));
@@ -492,18 +516,25 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .key-results { display: grid; gap: 8px; margin-top: 20px; }
 .key-results > div { display: flex; justify-content: space-between; gap: 20px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; }
 .key-results code { color: var(--primary-dark); font-weight: 800; }
-.report-select { max-width: 480px; margin-bottom: 18px; }
+.report-filters { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; padding: 14px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface-strong); }
+.report-select { max-width: 480px; }
 .verification-action {
-  width: 100%; min-height: 42px; margin-top: 10px;
+  min-height: 36px; padding: 7px 10px;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   border: 1px solid var(--primary); border-radius: 14px;
   background: var(--primary-soft); color: var(--primary-dark); font-weight: 800;
 }
+.verification-action.reject { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.data-row-actions, .registration-review-actions { display: flex !important; align-items: center; gap: 7px !important; }
+.registration-review-actions { flex-wrap: wrap; }
+.review-error { width: 100%; color: #b91c1c !important; text-transform: none !important; letter-spacing: 0 !important; }
+.action-row { grid-template-columns: repeat(var(--data-columns, 4), minmax(0, 1fr)) minmax(150px, auto); }
 .auth-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; padding: 5px; border-radius: 16px; background: var(--primary-soft); }
-.auth-mode-tabs button { min-height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 800; }
+.auth-mode-tabs button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 800; }
 .auth-mode-tabs button.active { background: var(--surface-strong); color: var(--primary-dark); box-shadow: 0 5px 16px rgba(16,32,51,.1); }
 .login-card .auth-mode-tabs + h1 { margin-top: 22px; }
 .auth-name-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.auth-name-row label { display: grid; gap: 7px; }
 .registration-form .error-message, .registration-form .success-message { display: flex; align-items: center; gap: 8px; }
 .admin-entry-panel { border-top: 5px solid var(--primary); }
 .admin-entry-panel.editing-panel { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(243, 178, 60, 0.16), var(--soft-shadow); }
@@ -513,15 +544,22 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .student-picker { display: grid; gap: 8px; padding: 13px; border: 1px solid var(--border); border-radius: 18px; }
 .student-picker > span { color: var(--muted); font-size: 13px; }
 .student-picker label { display: flex; align-items: center; gap: 8px; }
-.student-group { display: grid; gap: 7px; padding: 11px; border-radius: 14px; background: var(--surface-strong); }
-.student-group > strong { color: var(--primary-dark); font-size: 13px; }
-.student-group > div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 11px; background: var(--bg); }
+.student-group { overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-strong); }
+.student-group summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; color: var(--primary-dark); cursor: pointer; font-size: 13px; font-weight: 800; list-style: none; }
+.student-group summary::-webkit-details-marker { display: none; }
+.student-group summary::after { content: '+'; display: grid; place-items: center; width: 24px; height: 24px; margin-left: auto; border-radius: 999px; background: var(--primary-soft); color: var(--primary-dark); font-size: 18px; line-height: 1; }
+.student-group[open] summary::after { content: '\2212'; }
+.student-group summary small { color: var(--muted); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.student-group-list { display: grid; gap: 7px; padding: 0 10px 10px; border-top: 1px solid var(--border); }
+.student-group-list > div { display: grid; gap: 2px; padding: 9px 10px; border-radius: 11px; background: var(--bg); }
+.student-group-list > div:first-child { margin-top: 10px; }
 .cohort-picker select { width: 100%; }
 .cohort-summary { padding: 10px 12px; border-radius: 12px; background: var(--surface-strong); color: var(--primary-dark); font-size: 13px; }
 .data-group { display: grid; gap: 10px; }
 .data-group > h3 { margin: 12px 4px 2px; }
 .student-picker input[type='checkbox'], .checkbox-field input[type='checkbox'] { width: 16px; min-height: 16px; }
 .editable-row { grid-template-columns: repeat(var(--data-columns, 4), minmax(0, 1fr)) 44px; }
+.editable-row.action-row { grid-template-columns: repeat(var(--data-columns, 4), minmax(0, 1fr)) minmax(150px, auto); }
 .icon-action {
   width: 40px;
   min-height: 40px;
@@ -676,7 +714,7 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 @media (max-width: 760px) {
   .workspace { padding: 18px; }
   .topbar, .instructor-summary { align-items: flex-start; flex-direction: column; }
-  .stats-grid, .chart-grid, .two-column, .key-row, .report-summary, .course-roster-grid, .committee-grid, .stream-selection-layout, .selection-facts, .capacity-grid, .preference-form, .round-fields { grid-template-columns: 1fr; }
+  .stats-grid, .chart-grid, .two-column, .key-row, .report-summary, .report-filters, .course-roster-grid, .committee-grid, .stream-selection-layout, .selection-facts, .capacity-grid, .preference-form, .round-fields { grid-template-columns: 1fr; }
   .selection-row { grid-template-columns: 36px 1fr; }
   .selection-row > div:nth-child(n+3) { grid-column: 2; }
   .round-actions, .allocation-footer { align-items: flex-start; flex-direction: column; }
@@ -687,9 +725,12 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
   .table-row { grid-template-columns: 1fr; gap: 4px; padding: 10px 0; }
   .table-row em { justify-self: start; }
   .question-row { grid-template-columns: 1fr; }
+  .metric-template-fields, .criterion-heading, .metric-row { grid-template-columns: 1fr; }
+  .criterion-heading > div { justify-content: space-between; }
+  .metric-row .icon-action { justify-self: start; }
   .likert, .scale-row { grid-template-columns: repeat(6, minmax(34px, 1fr)); }
   .likert button { width: 100%; }
-  .data-row, .inline-form, .admin-form, .editable-row { grid-template-columns: 1fr; }
+  .data-row, .inline-form, .admin-form, .editable-row, .user-directory-toolbar { grid-template-columns: 1fr; }
   .notification-composer form { grid-template-columns: 1fr; }
   .credential-actions { align-items: flex-start; flex-direction: column; }
   .editable-row .icon-action { justify-self: start; }
@@ -1000,8 +1041,7 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
   grid-template-columns: minmax(300px, 1.1fr) minmax(390px, 510px);
   gap: clamp(36px, 6vw, 92px);
   align-items: start;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: clip;
   background:
     radial-gradient(circle at 16% 13%, rgba(255,255,255,.2), transparent 23rem),
     radial-gradient(circle at 75% 90%, rgba(244,190,67,.17), transparent 25rem),
@@ -1081,11 +1121,21 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
 }
 
 @media (min-width: 1061px) {
+  .sidebar {
+    align-self: start;
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+  .sidebar nav {
+    flex: 0 0 auto;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
   .login-page {
-    height: 100vh;
-    min-height: 560px;
+    min-height: 100vh;
     padding: 62px clamp(34px, 4vw, 58px) 18px;
-    overflow: hidden;
+    overflow: clip;
   }
   .login-hero h1 { font-size: clamp(44px, 5vw, 68px); }
   .login-hero > p:not(.eyebrow) { margin-block: 14px; font-size: 16px; line-height: 1.5; }
@@ -1094,6 +1144,7 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
     padding: 20px 26px;
     border-radius: 27px;
   }
+  .registration-card { max-height: none; overflow: visible; }
   .login-brand { padding-bottom: 10px; }
   .login-brand img { width: 44px; height: 44px; flex-basis: 44px; }
   .login-brand strong { font-size: 20px; }
@@ -1110,6 +1161,12 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
   .login-card > form > label:nth-of-type(n+3),
   .login-card > form > .error-message,
   .login-card > form > .primary-action { grid-column: 1 / -1; }
+  .login-card > form.registration-form > label { grid-column: auto; }
+  .login-card > form.registration-form > .auth-name-row,
+  .login-card > form.registration-form > .registration-email,
+  .login-card > form.registration-form > .error-message,
+  .login-card > form.registration-form > .success-message,
+  .login-card > form.registration-form > .primary-action { grid-column: 1 / -1; }
   .login-card > form select,
   .login-card > form input { min-height: 40px; padding-block: 8px; }
   .login-card > form > label > small { font-size: 10px; line-height: 1.2; }

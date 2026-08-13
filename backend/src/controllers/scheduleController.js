@@ -2,6 +2,8 @@ import { Department } from '../models/Department.js';
 import { Schedule } from '../models/Schedule.js';
 import { Semester } from '../models/Semester.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { Notification } from '../models/Notification.js';
+import { queueNotificationEmails } from '../services/notificationEmail.js';
 
 function sameId(first, second) {
   return String(first?._id || first) === String(second?._id || second);
@@ -56,6 +58,20 @@ async function validateRelations(department, semester) {
   }
 }
 
+async function notifyScheduleUpdate(schedule, senderId, updated = false) {
+  if (schedule.status !== 'PUBLISHED') return null;
+  const notification = await Notification.create({
+    audience: 'DEPARTMENT',
+    department: schedule.department?._id || schedule.department,
+    sender: senderId,
+    title: `${updated ? 'Schedule updated' : 'New schedule published'} - ${schedule.title}`,
+    message: `${schedule.scheduleType.replaceAll('_', ' ')} schedule "${schedule.title}" is available for ${schedule.semester?.name || 'the selected semester'} ${schedule.semester?.academicYear || ''}. Open the Schedules page to view the details${schedule.fileName ? ' and download the attached file' : ''}.`,
+    type: 'INFO'
+  });
+  await queueNotificationEmails(notification);
+  return notification;
+}
+
 function schedulePayload(req, department, existing) {
   const { title, description = '', scheduleType, semester, status = 'PUBLISHED' } = req.validated.body;
   if (!description.trim() && !req.file && !existing?.fileName) {
@@ -90,6 +106,7 @@ export const createSchedule = asyncHandler(async (req, res) => {
   await validateRelations(department, req.validated.body.semester);
   const created = await Schedule.create(schedulePayload(req, department));
   const schedule = await scheduleQuery(Schedule.findById(created._id));
+  await notifyScheduleUpdate(schedule, req.user.id);
   res.status(201).json({ schedule });
 });
 
@@ -102,6 +119,7 @@ export const updateSchedule = asyncHandler(async (req, res) => {
   Object.assign(existing, schedulePayload(req, department, existing));
   await existing.save();
   const schedule = await scheduleQuery(Schedule.findById(existing._id));
+  await notifyScheduleUpdate(schedule, req.user.id, true);
   res.json({ schedule });
 });
 

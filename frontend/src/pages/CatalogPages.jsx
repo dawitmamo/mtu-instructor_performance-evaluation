@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, EyeOff, FileUp, Pencil, PlusCircle, RefreshCw, X } from 'lucide-react';
-import { createAssignment, createCourse, createDepartment, createSemester, createUser, getAssignments, getCourses, getDepartments, getExamCommittees, getSemesters, getUsers, importUsersFile, saveExamCommittee, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser } from '../api/client.js';
+import { CheckCircle2, Eye, EyeOff, FileUp, Pencil, PlusCircle, RefreshCw, Search, X, XCircle } from 'lucide-react';
+import { createAssignment, createCourse, createDepartment, createSemester, createUser, getAssignments, getCourses, getDepartments, getExamCommittees, getSemesters, getUsers, importUsersFile, reviewRegistration, saveExamCommittee, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { academicStreams, groupStudents, streamLabel, studentGroupLabel } from '../utils/academicStreams.js';
+import { academicStreams, groupStudents, isEceDepartment, streamLabel, studentGroupLabel } from '../utils/academicStreams.js';
 
 const allRoles = ['SUPER_ADMIN', 'HOD', 'INSTRUCTOR', 'STUDENT'];
 const semesterStatuses = ['DRAFT', 'SCHEDULED', 'OPEN', 'CLOSED', 'ARCHIVED'];
@@ -54,7 +54,7 @@ function courseGroupLabel(course) {
   return `${department} / ${level}`;
 }
 
-function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, groupBy }) {
+function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, groupBy, filterRows, toolbar, rowActions }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
@@ -63,25 +63,27 @@ function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, group
     catch (requestError) { setError(requestError.response?.data?.message || 'Data could not be loaded.'); }
   }, [load]);
   useEffect(() => { refresh(); }, [refresh]);
+  const visibleRows = useMemo(() => rows ? (filterRows ? rows.filter(filterRows) : rows) : [], [filterRows, rows]);
   const groupedRows = useMemo(() => {
-    if (!rows || !groupBy) return [];
+    if (!groupBy) return [];
     const groups = new Map();
-    rows.forEach((row) => {
+    visibleRows.forEach((row) => {
       const label = groupBy(row);
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label).push(row);
     });
     return [...groups];
-  }, [groupBy, rows]);
-  const renderRow = (row) => <div className={canEdit ? 'data-row editable-row' : 'data-row'} style={{ '--data-columns': columns.length }} key={row._id}>{columns.map((column) => <div key={column.label}><small>{column.label}</small><span>{column.value(row)}</span></div>)}{canEdit && <button className='icon-action' type='button' onClick={() => onEdit(row)} title={`Edit ${title}`} aria-label={`Edit ${title} record`}><Pencil size={16} /></button>}</div>;
+  }, [groupBy, visibleRows]);
+  const renderRow = (row) => <div className={`data-row${canEdit || rowActions ? ' editable-row' : ''}${rowActions ? ' action-row' : ''}`} style={{ '--data-columns': columns.length }} key={row._id}>{columns.map((column) => <div key={column.label}><small>{column.label}</small><span>{column.value(row)}</span></div>)}{(canEdit || rowActions) && <div className='data-row-actions'>{rowActions?.(row, { refresh })}{canEdit && <button className='icon-action' type='button' onClick={() => onEdit(row)} title={`Edit ${title}`} aria-label={`Edit ${title} record`}><Pencil size={16} /></button>}</div>}</div>;
   if (error && !rows) return <div className='error-message'>{error}</div>;
   return <>
     {form?.({ refresh })}
     <section className='panel data-page'>
-      <div className='panel-title'><div><h2>{title}</h2><p>{subtitle}</p></div><span>{rows ? rows.length : 0} records</span></div>
+      <div className='panel-title'><div><h2>{title}</h2><p>{subtitle}</p></div><span>{rows && visibleRows.length !== rows.length ? `${visibleRows.length} of ${rows.length}` : visibleRows.length} records</span></div>
+      {toolbar}
       {error && <div className='error-message'>{error}</div>}
-      {!rows ? <div className='loading-state'>Loading data...</div> : !rows.length ? <div className='empty-state'>No records found.</div> :
-        <div className='data-table'>{groupBy ? groupedRows.map(([label, group]) => <section className='data-group' key={label}><h3>{label}</h3>{group.map(renderRow)}</section>) : rows.map(renderRow)}</div>
+      {!rows ? <div className='loading-state'>Loading data...</div> : !visibleRows.length ? <div className='empty-state'>{rows.length ? 'No records match the current filters.' : 'No records found.'}</div> :
+        <div className='data-table'>{groupBy ? groupedRows.map(([label, group]) => <section className='data-group' key={label}><h3>{label}</h3>{group.map(renderRow)}</section>) : visibleRows.map(renderRow)}</div>
       }
     </section>
   </>;
@@ -169,7 +171,7 @@ export function CoursesPage() {
   const [departments, setDepartments] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const selectedDepartment = departments.find((department) => sameId(department, values.department));
-  const isEceCourse = selectedDepartment?.code === 'ECE';
+  const isEceCourse = isEceDepartment(selectedDepartment);
   useEffect(() => { Promise.all([getDepartments(), getSemesters()]).then(([loadedDepartments, loadedSemesters]) => { const availableDepartments = roleScopedDepartments(loadedDepartments, user); setDepartments(availableDepartments); setSemesters(loadedSemesters); setValues((current) => ({ ...current, department: current.department || availableDepartments[0]?._id || '', semester: current.semester || loadedSemesters[0]?._id || '' })); }).catch(() => {}); }, [user]);
   const reset = () => { setValues({ ...initial, department: departments[0]?._id || '', semester: semesters[0]?._id || '' }); setEditingId(''); };
   const save = async (refresh) => {
@@ -184,7 +186,7 @@ export function CoursesPage() {
     <label><span>Code</span><input value={values.code} onChange={(event) => setValues({ ...values, code: event.target.value })} required placeholder='CS401' /></label>
     <label><span>Title</span><input value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} required placeholder='Software Engineering' /></label>
     <label><span>Credit hours</span><input type='number' min='1' max='8' value={values.creditHours} onChange={(event) => setValues({ ...values, creditHours: event.target.value })} required /></label>
-    <label><span>Department</span><select value={values.department} onChange={(event) => { const department = departments.find((item) => sameId(item, event.target.value)); setValues({ ...values, department: event.target.value, academicStream: department?.code === 'ECE' ? values.academicStream : '' }); }} disabled={departmentLocked} required><option value='' disabled>Select department</option>{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>
+    <label><span>Department</span><select value={values.department} onChange={(event) => { const department = departments.find((item) => sameId(item, event.target.value)); setValues({ ...values, department: event.target.value, academicStream: isEceDepartment(department) ? values.academicStream : '' }); }} disabled={departmentLocked} required><option value='' disabled>Select department</option>{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>
     <label><span>Semester</span><select value={values.semester} onChange={(event) => setValues({ ...values, semester: event.target.value })} required><option value='' disabled>Select semester</option>{semesters.map((semester) => <option value={semester._id} key={semester._id}>{semester.name} {semester.academicYear}</option>)}</select></label>
     <label><span>Class / section</span><input value={values.level} onChange={(event) => setValues({ ...values, level: event.target.value })} placeholder='Year 4 / Section A' /></label>
     <label><span>Year level</span><select value={values.yearLevel} onChange={(event) => { const yearLevel = event.target.value; setValues({ ...values, yearLevel, academicStream: Number(yearLevel) >= 4 ? values.academicStream : '' }); }}><option value=''>Not specified</option>{[2, 3, 4, 5].map((year) => <option value={year} key={year}>Year {year}</option>)}</select></label>
@@ -473,6 +475,24 @@ function UserImportForm({ user, departments, refresh }) {
   </section>;
 }
 
+function RegistrationReviewActions({ row, refresh }) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const status = row.registrationStatus || 'APPROVED';
+  if (status === 'APPROVED') return null;
+  const review = async (nextStatus) => {
+    setBusy(nextStatus); setError('');
+    try { await reviewRegistration(row._id, nextStatus); await refresh(); }
+    catch (requestError) { setError(requestError.response?.data?.message || 'Registration could not be reviewed.'); }
+    finally { setBusy(''); }
+  };
+  return <div className='registration-review-actions'>
+    <button type='button' className='verification-action approve' onClick={() => review('APPROVED')} disabled={Boolean(busy)}><CheckCircle2 size={15} />{busy === 'APPROVED' ? 'Verifying...' : 'Verify'}</button>
+    {status === 'PENDING' && <button type='button' className='verification-action reject' onClick={() => review('REJECTED')} disabled={Boolean(busy)}><XCircle size={15} />{busy === 'REJECTED' ? 'Rejecting...' : 'Reject'}</button>}
+    {error && <small className='review-error'>{error}</small>}
+  </div>;
+}
+
 export function UsersPage() {
   const { user } = useAuth();
   const editable = canManage('users', user);
@@ -482,8 +502,12 @@ export function UsersPage() {
   const [editingId, setEditingId] = useState('');
   const [showManagedPassword, setShowManagedPassword] = useState(false);
   const [departments, setDepartments] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('ALL');
+  const [roleFilter, setRoleFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const selectedUserDepartment = departments.find((department) => sameId(department, values.department));
-  const isEceUser = selectedUserDepartment?.code === 'ECE';
+  const isEceUser = isEceDepartment(selectedUserDepartment);
   const streamRequired = isEceUser && (values.role === 'INSTRUCTOR' || (values.role === 'STUDENT' && Number(values.yearLevel) >= 4));
   useEffect(() => { getDepartments().then((loadedDepartments) => { const availableDepartments = roleScopedDepartments(loadedDepartments, user); setDepartments(availableDepartments); setValues((current) => ({ ...current, department: current.department || availableDepartments[0]?._id || '' })); }).catch(() => setDepartments([])); }, [user]);
   const reset = () => { setValues({ ...initial, department: departments[0]?._id || '' }); setEditingId(''); setShowManagedPassword(false); };
@@ -505,7 +529,40 @@ export function UsersPage() {
     setValues({ firstName: row.firstName || '', lastName: row.lastName || '', email: row.email || '', password: '', role: row.role || 'STUDENT', committeeRoles: row.committeeRoles || [], department: row.department?._id || '', studentNumber: row.studentNumber || '', yearLevel: row.yearLevel || '', gpa: row.gpa ?? '', academicStream: row.academicStream || '', employeeNumber: row.employeeNumber || '', isActive: row.isActive !== false });
     window.requestAnimationFrame(() => document.getElementById('user-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
-  return <DataPage title='Users' subtitle='Active evaluation system accounts grouped by academic cohort.' load={getUsers} canEdit={editable} onEdit={edit} groupBy={(row) => row.role === 'STUDENT' ? `${row.department?.name || 'No department'} / ${studentGroupLabel(row)}` : 'Staff accounts'} form={({ refresh }) => editable && <>
+  const normalizedSearch = userSearch.trim().toLowerCase();
+  const filterUser = (row) => {
+    const departmentMatches = departmentFilter === 'ALL'
+      || (departmentFilter === 'UNIVERSITY' ? !row.department : sameId(row.department, departmentFilter));
+    const roleMatches = roleFilter === 'ALL' || row.role === roleFilter || (row.committeeRoles || []).includes(roleFilter);
+    const statusMatches = statusFilter === 'ALL' || (row.registrationStatus || 'APPROVED') === statusFilter;
+    if (!departmentMatches || !roleMatches || !statusMatches) return false;
+    if (!normalizedSearch) return true;
+    return [
+      row.firstName,
+      row.lastName,
+      `${row.firstName || ''} ${row.lastName || ''}`,
+      row.username,
+      row.email,
+      row.studentNumber,
+      row.employeeNumber,
+      row.department?.name,
+      row.department?.code,
+      row.role,
+      row.role?.replaceAll('_', ' '),
+      ...(row.committeeRoles || []),
+      ...(row.committeeRoles || []).map((role) => role.replaceAll('_', ' '))
+    ].some((field) => String(field || '').toLowerCase().includes(normalizedSearch));
+  };
+  const filtersActive = Boolean(normalizedSearch || departmentFilter !== 'ALL' || roleFilter !== 'ALL' || statusFilter !== 'ALL');
+  const clearFilters = () => { setUserSearch(''); setDepartmentFilter('ALL'); setRoleFilter('ALL'); setStatusFilter('ALL'); };
+  const directoryToolbar = <div className='user-directory-toolbar' role='search' aria-label='Search and filter users'>
+    <label className='user-search-field'><span>Search users</span><div><Search size={17} aria-hidden='true' /><input type='search' value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder='Name, email, username, or ID' /></div></label>
+    <label><span>Department</span><select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value='ALL'>All departments</option>{user.role === 'SUPER_ADMIN' && <option value='UNIVERSITY'>University-wide</option>}{departments.map((department) => <option value={department._id} key={department._id}>{department.name} ({department.code})</option>)}</select></label>
+    <label><span>Role</span><select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value='ALL'>All roles</option>{roles.map((role) => <option value={role} key={role}>{role.replaceAll('_', ' ')}</option>)}<option value='COURSE_EXAM_COMMITTEE'>Course and Exam Committee</option></select></label>
+    <label><span>Registration</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value='ALL'>All statuses</option><option value='PENDING'>Pending verification</option><option value='APPROVED'>Approved</option><option value='REJECTED'>Rejected</option></select></label>
+    <button type='button' className='secondary-action user-filter-clear' onClick={clearFilters} disabled={!filtersActive}><X size={16} />Clear filters</button>
+  </div>;
+  return <DataPage title='Users' subtitle={user.role === 'SUPER_ADMIN' ? 'Review registrations and manage accounts across departments.' : 'Review student and instructor registrations in your department.'} load={getUsers} canEdit={editable} onEdit={edit} filterRows={filterUser} toolbar={directoryToolbar} rowActions={(row, { refresh }) => <RegistrationReviewActions row={row} refresh={refresh} />} groupBy={(row) => row.role === 'STUDENT' ? `${row.department?.name || 'No department'} / ${studentGroupLabel(row)}` : `${row.department?.name || 'University-wide'} / Staff accounts`} form={({ refresh }) => editable && <>
     <UserImportForm user={user} departments={departments} refresh={refresh} />
     <AdminForm id='user-editor' title='User' message={editingId && user.role !== 'SUPER_ADMIN' ? 'The MTU email is the login username. Only the Super Admin can reset an existing password.' : 'The MTU email is the login username. Set an initial password or enter a new password here to reset it.'} editing={Boolean(editingId)} onCancel={reset} onSubmit={() => save(refresh)}>
     <label><span>First name</span><input value={values.firstName} onChange={(event) => setValues({ ...values, firstName: event.target.value })} required /></label>
@@ -513,7 +570,7 @@ export function UsersPage() {
     <label className='credential-field'><span>MTU email / username</span><input type='email' value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value.toLowerCase() })} pattern='.+@mtu[.]edu[.]et' title='Use an @mtu.edu.et email address' autoComplete='off' placeholder='name@mtu.edu.et' required /><small>This is the username used on the login page.</small></label>
     {(!editingId || user.role === 'SUPER_ADMIN') && <label className='credential-field managed-password-field'><span>{editingId ? 'Reset password' : 'Initial password'}</span><div className='password-input'><input type={showManagedPassword ? 'text' : 'password'} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} minLength='8' autoComplete='new-password' required={!editingId} placeholder={editingId ? 'Leave blank to keep current password' : 'At least 8 characters'} /><button type='button' onClick={() => setShowManagedPassword((visible) => !visible)} aria-label={showManagedPassword ? 'Hide password' : 'Show password'} title={showManagedPassword ? 'Hide password' : 'Show password'}>{showManagedPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><div className='credential-actions'><small>{editingId ? 'Enter a new value to reset the password.' : 'Give this password securely to the user.'}</small><button type='button' className='text-action compact-action' onClick={() => { setValues((current) => ({ ...current, password: generateTemporaryPassword() })); setShowManagedPassword(true); }}><RefreshCw size={14} />Generate password</button></div></label>}
     <label><span>Role</span><select value={values.role} onChange={(event) => { const role = event.target.value; setValues({ ...values, role, studentNumber: role === 'STUDENT' ? values.studentNumber : '', yearLevel: role === 'STUDENT' ? values.yearLevel : '', gpa: role === 'STUDENT' ? values.gpa : '', employeeNumber: role === 'STUDENT' ? '' : values.employeeNumber, academicStream: isEceUser && role === 'INSTRUCTOR' ? values.academicStream : '' }); }}>{roles.map((role) => <option value={role} key={role}>{role.replaceAll('_', ' ')}</option>)}</select></label>
-    <label><span>Department</span><select value={values.department} onChange={(event) => { const department = departments.find((item) => sameId(item, event.target.value)); setValues({ ...values, department: event.target.value, academicStream: department?.code === 'ECE' ? values.academicStream : '' }); }} required={values.role !== 'SUPER_ADMIN'}>{values.role === 'SUPER_ADMIN' && <option value=''>University-wide</option>}{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>
+    <label><span>Department</span><select value={values.department} onChange={(event) => { const department = departments.find((item) => sameId(item, event.target.value)); setValues({ ...values, department: event.target.value, academicStream: isEceDepartment(department) ? values.academicStream : '' }); }} required={values.role !== 'SUPER_ADMIN'}>{values.role === 'SUPER_ADMIN' && <option value=''>University-wide</option>}{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>
     {values.role === 'STUDENT' && <label><span>Student number</span><input value={values.studentNumber} onChange={(event) => setValues({ ...values, studentNumber: event.target.value })} required placeholder='Student ID number' /></label>}
     {values.role === 'STUDENT' && <label><span>Year level</span><select value={values.yearLevel} required={isEceUser} onChange={(event) => { const yearLevel = event.target.value; setValues({ ...values, yearLevel, academicStream: Number(yearLevel) >= 4 ? values.academicStream : '' }); }}><option value=''>Not specified</option>{[2, 3, 4, 5].map((year) => <option value={year} key={year}>Year {year}</option>)}</select></label>}
     {values.role === 'STUDENT' && <label><span>GPA</span><input type='number' min='0' max='4' step='0.01' value={values.gpa} onChange={(event) => setValues({ ...values, gpa: event.target.value })} placeholder='Required for stream allocation' /></label>}
@@ -526,6 +583,7 @@ export function UsersPage() {
     { label: 'Name', value: (row) => row.firstName + ' ' + row.lastName },
     { label: 'Login email', value: (row) => row.email },
     { label: 'Role / Duties', value: (row) => [row.role.replaceAll('_', ' '), ...(row.committeeRoles || []).map((role) => role.replaceAll('_', ' '))].join(' / ') },
-    { label: 'Department / Cohort', value: (row) => `${row.department?.name || 'University-wide'}${row.role === 'STUDENT' ? ` / ${studentGroupLabel(row)}${typeof row.gpa === 'number' ? ` / GPA ${row.gpa.toFixed(2)}` : ''}` : row.academicStream ? ` / ${streamLabel(row.academicStream)}` : ''}` }
+    { label: 'Department / Cohort', value: (row) => `${row.department?.name || 'University-wide'}${row.role === 'STUDENT' ? ` / ${studentGroupLabel(row)}${typeof row.gpa === 'number' ? ` / GPA ${row.gpa.toFixed(2)}` : ''}` : row.academicStream ? ` / ${streamLabel(row.academicStream)}` : ''}` },
+    { label: 'Registration', value: (row) => (row.registrationStatus || 'APPROVED').replaceAll('_', ' ') }
   ]} />;
 }

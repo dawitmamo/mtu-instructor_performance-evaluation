@@ -7,7 +7,7 @@ function templateRows(template) {
     category.questions
       .slice()
       .sort((first, second) => first.order - second.order)
-      .map((question) => ({ category: category.name, question: question.text }))
+      .map((question) => ({ category: category.name, question: question.text, value: question.value || 1 }))
   );
 }
 
@@ -29,10 +29,10 @@ function QuestionList({ rows, scale, answers, setAnswers }) {
   return <div className='question-list'>{rows.map((row, index) => {
     const answer = answers[index] || {};
     return <div className='question-row' key={row.category + row.question}>
-      <div><strong>{row.question}</strong><span>{row.category}</span></div>
+      <div><strong>{row.question}</strong><span>{row.category} · Value {row.value}</span></div>
       <div className='likert scale-row'>{options.map((option) =>
-        <button type='button' title={option.description} className={answer.score === option.value ? 'selected' : ''} onClick={() => setAnswers({ ...answers, [index]: { score: option.value, notApplicable: false } })} key={option.value}>{option.label}</button>
-      )}{scale?.allowNotApplicable && <button type='button' title='Not applicable' className={answer.notApplicable ? 'selected muted' : 'muted'} onClick={() => setAnswers({ ...answers, [index]: { notApplicable: true } })}>{scale.notApplicableLabel || 'NA'}</button>}</div>
+        <button type='button' title={option.description} className={answer.score === option.value ? 'selected' : ''} onClick={() => setAnswers((current) => ({ ...current, [index]: { score: option.value, notApplicable: false } }))} key={option.value}>{option.label}</button>
+      )}{scale?.allowNotApplicable && <button type='button' title='Not applicable' className={answer.notApplicable ? 'selected muted' : 'muted'} onClick={() => setAnswers((current) => ({ ...current, [index]: { notApplicable: true } }))}>{scale.notApplicableLabel || 'NA'}</button>}</div>
     </div>;
   })}</div>;
 }
@@ -127,7 +127,7 @@ export function StaffEvaluationForm({ kind, title, onSubmitted }) {
   };
 
   return <section className='panel evaluation-panel staff-evaluation-panel'>
-    <div className='panel-title'><div><h2>{title || template?.name || 'Staff Evaluation'}</h2><p className='template-meta'>{template?.description}</p></div><span>{completion}% complete</span></div>
+    <div className='panel-title'><div><h2>{template?.name || title || 'Staff Evaluation'}</h2><p className='template-meta'>{template?.description}</p></div><span>{completion}% complete</span></div>
     {message && <div className='submitted-state'><CheckCircle2 size={36} /><strong>{message}</strong><span>Responses are locked after submission.</span></div>}
     {targets.length ?
       <form onSubmit={submit}>

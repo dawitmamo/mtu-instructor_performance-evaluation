@@ -5,6 +5,13 @@ export const academicStreams = [
   ['CONTROL_ENGINEERING', 'Control Engineering']
 ];
 
+export function isEceDepartment(department) {
+  if (!department) return false;
+  const code = String(department.code || '').trim().toUpperCase();
+  const name = String(department.name || '').trim().toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ');
+  return code === 'ECE' || name.includes('electrical and computer engineering');
+}
+
 const streamNames = new Map(academicStreams);
 
 export function streamLabel(stream) {

@@ -56,7 +56,7 @@ test('authenticated users can change their password and receive a fresh session'
 test('password reset tokens are generic, expiring, single-use, and replace the password', async () => {
   const user = await createUser();
   const unknown = await request(app).post('/api/auth/forgot-password').send({ email: 'unknown@mtu.edu.et' }).expect(200);
-  expect(unknown.body.message).toBe('If the account exists, password reset instructions have been prepared.');
+  expect(unknown.body.message).toBe('If the account exists, password reset instructions have been sent.');
   expect(unknown.body.resetToken).toBeUndefined();
 
   const requested = await request(app).post('/api/auth/forgot-password').send({ email: user.email }).expect(200);
@@ -68,6 +68,20 @@ test('password reset tokens are generic, expiring, single-use, and replace the p
   await request(app).post('/api/auth/reset-password').send({ token: requested.body.resetToken, newPassword: 'AnotherPassword789!' }).expect(400);
   await request(app).post('/api/auth/login').send({ email: user.email, password: 'Password123!' }).expect(401);
   await request(app).post('/api/auth/login').send({ email: user.email, password: 'ResetPassword789!' }).expect(200);
+});
+
+test('pending registrations cannot create usable password reset tokens', async () => {
+  const pending = await createUser('pending.security@mtu.edu.et');
+  pending.registrationStatus = 'PENDING';
+  pending.isActive = false;
+  await pending.save();
+
+  const response = await request(app).post('/api/auth/forgot-password').send({ email: pending.email }).expect(200);
+  expect(response.body.message).toBe('If the account exists, password reset instructions have been sent.');
+  expect(response.body.resetToken).toBeUndefined();
+  const stored = await User.findById(pending._id).select('+resetPasswordTokenHash +resetPasswordExpiresAt');
+  expect(stored.resetPasswordTokenHash).toBeUndefined();
+  expect(stored.resetPasswordExpiresAt).toBeUndefined();
 });
 
 test('expired reset tokens are rejected', async () => {

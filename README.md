@@ -5,7 +5,8 @@ A production-oriented MERN system for academic administration, semester workflow
 ## Features
 
 - JWT access and refresh token authentication
-- Administrator-managed usernames and passwords with no email-verification gate
+- Self-service student and instructor registration with department-aware HOD or Super Admin approval before sign-in
+- Durable email and in-app notifications for evaluations, results, stream selection, course assignments, schedules, and HOD announcements
 - Self-service password change plus single-use, 30-minute forgot/reset password tokens
 - Self-service profiles for every role with editable name, phone, bio, and authenticated JPEG/PNG/WebP profile photos
 - Role-based authorization for Super Admin, HOD, Instructor, and Student, with one HOD-appointed Course and Exam Committee duty for instructor accounts
@@ -38,7 +39,13 @@ MongoDB: `mongodb://127.0.0.1:27017/instructor_evaluations`
 
 Google OAuth placeholders are included in `.env.example`. Add the Google client ID and secret to your local `.env`, and register `http://localhost:5000/api/auth/google/callback` as an authorized redirect URI in Google Cloud. The secret must remain backend-only; `VITE_GOOGLE_CLIENT_ID` is safe for the browser.
 
-Accounts are created from the Users page. Super Admins manage every role across the university; HODs can create and update only instructors and students in their own department. Public signup and email verification are disabled for now.
+Students and instructors can register from the sign-in page and select the appropriate department, year level, and ECE stream when applicable. A new account remains pending until its department HOD or a Super Admin approves it. Super Admins manage every role across the university; HODs can approve, create, and update only instructors and students in their own department.
+
+### Email Notifications
+
+Copy the SMTP settings from `.env.example` into `.env` and set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM` for the university mail provider. Set `SMTP_SECURE=true` when the provider requires implicit TLS (normally port 465); port 587 normally uses `false` and upgrades with STARTTLS.
+
+Approved students and instructors receive email at their registered address when an evaluation is published, a final evaluation result is available, an ECE stream-selection round opens or allocation result is released, a course is assigned or finalized, a department schedule is published or updated, or an HOD/Super Admin sends a direct, department, or university announcement. Password-reset requests also send a secure, single-use link that expires after 30 minutes. Messages are retained in the in-app notification center where applicable. Task email delivery uses a persistent queue with retries, so a temporary SMTP outage does not cancel the academic action; pending messages are retried after the service restarts.
 
 The seeded Super Admin uses `admin12345`; other seeded accounts use `Password123!`. Sign in with the username shown below (the part before `@mtu.edu.et`):
 

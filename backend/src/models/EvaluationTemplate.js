@@ -4,7 +4,8 @@ import { evaluationScale, templateCategoriesFor } from '../utils/evaluationTempl
 const questionSchema = new mongoose.Schema(
   {
     text: { type: String, required: true },
-    order: { type: Number, required: true }
+    order: { type: Number, required: true },
+    value: { type: Number, required: true, min: 1, max: 100, default: 1 }
   },
   { _id: false }
 );
@@ -30,6 +31,9 @@ const evaluationTemplateSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     kind: { type: String, enum: ['STUDENT', 'PEER', 'HOD'], default: 'STUDENT', index: true },
+    department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', index: true },
+    scopeKey: { type: String, required: true, default: 'GLOBAL' },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     description: { type: String, default: '' },
     version: { type: Number, default: 1 },
     isActive: { type: Boolean, default: true },
@@ -43,7 +47,7 @@ const evaluationTemplateSchema = new mongoose.Schema(
       default: function defaultCategories() {
         return templateCategoriesFor(this?.kind || 'STUDENT').map((category) => ({
           name: category.name,
-          questions: category.questions.map((text, index) => ({ text, order: index + 1 }))
+          questions: category.questions.map((text, index) => ({ text, order: index + 1, value: 1 }))
         }));
       }
     }
@@ -51,6 +55,7 @@ const evaluationTemplateSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-evaluationTemplateSchema.index({ kind: 1, version: 1 }, { unique: true });
+evaluationTemplateSchema.index({ kind: 1, scopeKey: 1, version: 1 }, { unique: true });
+evaluationTemplateSchema.index({ kind: 1, scopeKey: 1, isActive: 1, version: -1 });
 
 export const EvaluationTemplate = mongoose.model('EvaluationTemplate', evaluationTemplateSchema);

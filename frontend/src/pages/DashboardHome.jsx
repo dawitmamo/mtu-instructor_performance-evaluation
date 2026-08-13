@@ -57,7 +57,7 @@ function NotificationComposer({ user }) {
   useEffect(() => {
     Promise.all([getUsers(), getDepartments()])
       .then(([loadedUsers, loadedDepartments]) => {
-        const loadedRecipients = loadedUsers.filter((item) => item.role === 'INSTRUCTOR' || (isAdmin && item.role === 'HOD'));
+        const loadedRecipients = loadedUsers.filter((item) => ['INSTRUCTOR', 'STUDENT'].includes(item.role) || (isAdmin && item.role === 'HOD'));
         setRecipients(loadedRecipients);
         setDepartments(loadedDepartments);
         setValues((current) => ({ ...current, user: current.user || loadedRecipients[0]?._id || '', department: current.department || loadedDepartments[0]?._id || '' }));
@@ -78,11 +78,11 @@ function NotificationComposer({ user }) {
     }
   };
   return <section className='panel notification-composer'>
-    <div className='panel-title'><div><h2><Bell size={20} /> Staff notifications</h2><p className='template-meta'>Send an announcement to an HOD, instructor, department, or the university.</p></div></div>
+    <div className='panel-title'><div><h2><Bell size={20} /> Email and in-app notifications</h2><p className='template-meta'>Send an announcement to a student, instructor, HOD, department, or the university. Email is queued automatically.</p></div></div>
     <form onSubmit={submit}>
-      <label><span>Audience</span><select value={values.audience} onChange={(event) => setValues({ ...values, audience: event.target.value })}>{isAdmin && <option value='UNIVERSITY'>All university staff</option>}<option value='DEPARTMENT'>{isAdmin ? 'One department' : 'My department'}</option><option value='USER'>One staff member</option></select></label>
+      <label><span>Audience</span><select value={values.audience} onChange={(event) => setValues({ ...values, audience: event.target.value })}>{isAdmin && <option value='UNIVERSITY'>All students and instructors</option>}<option value='DEPARTMENT'>{isAdmin ? 'One department' : 'My department students and instructors'}</option><option value='USER'>One person</option></select></label>
       {values.audience === 'DEPARTMENT' && isAdmin && <label><span>Department</span><select value={values.department} onChange={(event) => setValues({ ...values, department: event.target.value })}>{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>}
-      {values.audience === 'USER' && <label><span>Staff recipient</span><select value={values.user} onChange={(event) => setValues({ ...values, user: event.target.value })}>{recipients.map((recipient) => <option value={recipient._id} key={recipient._id}>{recipient.firstName} {recipient.lastName} ({recipient.role.replaceAll('_', ' ')})</option>)}</select></label>}
+      {values.audience === 'USER' && <label><span>Recipient</span><select value={values.user} onChange={(event) => setValues({ ...values, user: event.target.value })}>{recipients.map((recipient) => <option value={recipient._id} key={recipient._id}>{recipient.firstName} {recipient.lastName} ({recipient.role.replaceAll('_', ' ')})</option>)}</select></label>}
       <label><span>Type</span><select value={values.type} onChange={(event) => setValues({ ...values, type: event.target.value })}><option value='INFO'>Information</option><option value='REMINDER'>Reminder</option><option value='DEADLINE'>Deadline</option></select></label>
       <label><span>Title</span><input value={values.title} onChange={(event) => setValues({ ...values, title: event.target.value })} minLength={3} maxLength={150} required /></label>
       <label className='notification-message'><span>Message</span><textarea value={values.message} onChange={(event) => setValues({ ...values, message: event.target.value })} minLength={5} maxLength={2000} required /></label>
@@ -94,26 +94,33 @@ function NotificationComposer({ user }) {
 }
 
 function InstructorHome({ data, onSubmitted }) {
-  const report = data.finalReport;
-  const studentScore = report?.sourceScores?.student ?? data.scores.studentScore;
-  const peerScore = report?.sourceScores?.peer ?? data.scores.peerScore;
-  const hodScore = report?.sourceScores?.hod ?? data.scores.hodScore;
-  const studentWeighted = report?.weightedContributions?.student ?? data.scores.studentWeighted;
-  const peerWeighted = report?.weightedContributions?.peer ?? data.scores.peerWeighted;
-  const hodWeighted = report?.weightedContributions?.hod ?? data.scores.hodWeighted;
+  const courseReports = data.courseReports || [];
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState(courseReports[0]?.assignment?._id || '');
+  useEffect(() => {
+    if (!courseReports.some((item) => item.assignment?._id === selectedAssignmentId)) setSelectedAssignmentId(courseReports[0]?.assignment?._id || '');
+  }, [courseReports, selectedAssignmentId]);
+  const selectedCourseReport = courseReports.find((item) => item.assignment?._id === selectedAssignmentId) || courseReports[0];
+  const report = selectedCourseReport?.finalReport;
+  const liveScores = selectedCourseReport?.scores || data.scores;
+  const studentScore = report?.sourceScores?.student ?? liveScores.studentScore;
+  const peerScore = report?.sourceScores?.peer ?? liveScores.peerScore;
+  const hodScore = report?.sourceScores?.hod ?? liveScores.hodScore;
+  const studentWeighted = report?.weightedContributions?.student ?? liveScores.studentWeighted;
+  const peerWeighted = report?.weightedContributions?.peer ?? liveScores.peerWeighted;
+  const hodWeighted = report?.weightedContributions?.hod ?? liveScores.hodWeighted;
   return <>
     <div className='stats-grid'>
       <StatCard label='Courses' value={data.assignments.length} helper='Assigned courses' />
       <StatCard label='Students' value={data.enrolledStudents} helper='Enrolled students' tone='teal' />
       <StatCard label='Peer tasks' value={data.peerTasks.length} helper='Assigned and pending' tone='amber' />
-      <StatCard label='Final report' value={report ? report.overallScore : 'Pending'} helper={report ? 'Published score' : 'Awaiting HOD or committee'} tone='rose' />
+      <StatCard label='Published reports' value={(data.finalReports || []).length} helper={`${courseReports.length} assigned course${courseReports.length === 1 ? '' : 's'}`} tone='rose' />
     </div>
     <section className='panel instructor-section'>
       <div className='panel-title'><div><h2><UsersRound size={20} /> My students and streams</h2><p className='template-meta'>A single roster of students assigned to your courses, grouped by year and academic stream.</p></div><span>{(data.assignedStudents || []).length} students</span></div>
-      {(data.assignedStudents || []).length ? <div className='student-roster grouped-roster'>{groupStudents(data.assignedStudents).map(([label, students]) => <section className='student-group' key={label}><strong>{label} ({students.length})</strong>{students.map((student) => <div key={student._id}>
+      {(data.assignedStudents || []).length ? <div className='student-roster grouped-roster'>{groupStudents(data.assignedStudents).map(([label, students]) => <details className='student-group' key={label}><summary><span>{label}</span><small>{students.length} student{students.length === 1 ? '' : 's'}</small></summary><div className='student-group-list'>{students.map((student) => <div key={student._id}>
         <span>{student.firstName} {student.lastName}</span>
-        <small>{student.studentNumber || 'No student number'} / {student.academicStream ? streamLabel(student.academicStream) : 'General program'} / {(student.courses || []).map((course) => course.code).join(', ') || 'Assigned course'}</small>
-      </div>)}</section>)}</div> : <div className='empty-state'>No students are assigned to your courses yet.</div>}
+        <small>{student.studentNumber || 'No student number'} / {student.email} / {student.academicStream ? streamLabel(student.academicStream) : 'General program'} / {(student.courses || []).map((course) => course.code).join(', ') || 'Assigned course'}</small>
+      </div>)}</div></details>)}</div> : <div className='empty-state'>No students are assigned to your courses yet.</div>}
     </section>
     <section className='panel instructor-section'>
       <div className='panel-title'><div><h2><BookOpenCheck size={20} /> Assigned courses and students</h2><p className='template-meta'>Only courses and student rosters assigned to your instructor account are shown.</p></div><span>{data.assignments.length} courses</span></div>
@@ -123,10 +130,10 @@ function InstructorHome({ data, onSubmitted }) {
           <em>{assignment.status}</em>
         </div>
         <div className='roster-title'><UsersRound size={16} /><strong>Assigned students ({assignment.enrolledStudents?.length || 0})</strong></div>
-        {assignment.enrolledStudents?.length ? <div className='student-roster grouped-roster'>{groupStudents(assignment.enrolledStudents).map(([label, students]) => <section className='student-group' key={label}><strong>{label} ({students.length})</strong>{students.map((student) => <div key={student._id}>
+        {assignment.enrolledStudents?.length ? <div className='student-roster grouped-roster'>{groupStudents(assignment.enrolledStudents).map(([label, students]) => <details className='student-group' key={label}><summary><span>{label}</span><small>{students.length} student{students.length === 1 ? '' : 's'}</small></summary><div className='student-group-list'>{students.map((student) => <div key={student._id}>
           <span>{student.firstName} {student.lastName}</span>
           <small>{student.studentNumber || 'No student number'} / {student.email}</small>
-        </div>)}</section>)}</div> : <p className='muted-copy'>No students are assigned to this course.</p>}
+        </div>)}</div></details>)}</div> : <p className='muted-copy'>No students are assigned to this course.</p>}
       </article>)}</div> : <div className='empty-state'>No courses are assigned to your account yet.</div>}
     </section>
     <section className='instructor-section'>
@@ -134,18 +141,18 @@ function InstructorHome({ data, onSubmitted }) {
       <StaffEvaluationForm kind='PEER' title='Peer Performance Evaluation' onSubmitted={onSubmitted} />
     </section>
     <section className='panel instructor-section'>
-      <div className='panel-title'><div><h2><FileCheck2 size={20} /> My evaluation report</h2><p className='template-meta'>Your own evaluation results and the final summary published by your HOD or Course and Exam Committee.</p></div><span>{report ? 'Final' : 'Not published'}</span></div>
+      <div className='panel-title'><div><h2><FileCheck2 size={20} /> My course evaluation report</h2><p className='template-meta'>Select one course to view only its evaluation results and published final summary.</p></div><span>{report ? 'Final' : 'Not published'}</span></div>
+      {courseReports.length > 0 && <div className='report-filters'><label className='report-select'><span>Course report</span><select value={selectedAssignmentId} onChange={(event) => setSelectedAssignmentId(event.target.value)}>{courseReports.map((item) => <option value={item.assignment?._id} key={item.assignment?._id}>{item.course?.code} - {item.course?.title} / {item.semester?.name} {item.semester?.academicYear}</option>)}</select></label></div>}
       <div className='report-summary'>
         <div><small>Instructor</small><strong>{report?.instructor ? `${report.instructor.firstName} ${report.instructor.lastName}` : `${data.instructor.firstName} ${data.instructor.lastName}`}</strong></div>
-        <div><small>Course(s)</small><strong>{report?.courseResults?.map((item) => `${item.courseCode} - ${item.courseTitle}`).join(', ') || data.assignments.map((item) => `${item.course?.code} - ${item.course?.title}`).join(', ') || 'No assigned course'}</strong></div>
-        <div><small>Final result</small><strong>{report?.overallScore ?? data.scores.overall} / 5</strong></div>
-        <div><small>Student 40%</small><strong>{studentScore} × 40% = {studentWeighted}</strong></div>
-        <div><small>Peer 30%</small><strong>{peerScore} × 30% = {peerWeighted}</strong></div>
-        <div><small>HOD 30%</small><strong>{hodScore} × 30% = {hodWeighted}</strong></div>
-        <div><small>Student completion</small><strong>{data.completionPercentage}%</strong></div>
-        <div><small>Semester</small><strong>{report?.semester ? `${report.semester.name} ${report.semester.academicYear}` : 'Current'}</strong></div>
+        <div><small>Course</small><strong>{selectedCourseReport?.course ? `${selectedCourseReport.course.code} - ${selectedCourseReport.course.title}` : 'No assigned course'}</strong></div>
+        <div><small>Final result</small><strong>{report?.overallScore ?? liveScores.overall}%</strong></div>
+        <div><small>Student 40%</small><strong>{studentScore} / 5 × 40% = {studentWeighted}%</strong></div>
+        <div><small>Peer 30%</small><strong>{peerScore} / 5 × 30% = {peerWeighted}%</strong></div>
+        <div><small>HOD 30%</small><strong>{hodScore} / 5 × 30% = {hodWeighted}%</strong></div>
+        <div><small>Student completion</small><strong>{selectedCourseReport?.studentCompletionPercentage ?? 0}%</strong></div>
+        <div><small>Semester</small><strong>{selectedCourseReport?.semester ? `${selectedCourseReport.semester.name} ${selectedCourseReport.semester.academicYear}` : 'Current'}</strong></div>
       </div>
-      {report?.courseResults?.length > 0 && <div className='key-results'><p>Final results by course</p>{report.courseResults.map((item) => <div key={item.assignment || item._id}><strong>{item.courseCode} - {item.courseTitle}</strong><code>{item.finalScore} / 5</code></div>)}</div>}
       {report ? <>
         <div className='final-summary'>
           <span>Final summary</span>
@@ -154,7 +161,7 @@ function InstructorHome({ data, onSubmitted }) {
         </div>
         {report.recommendations?.length > 0 && <div className='recommendation-list'><strong>Recommendations</strong>{report.recommendations.map((item) => <p key={item}>{item}</p>)}</div>}
       </> : <div className='empty-state'>Your live scores will remain visible here. The signed final summary will appear after your HOD or Course and Exam Committee publishes it.</div>}
-      <AnalyticsCharts scores={data.radar} />
+      <AnalyticsCharts scores={selectedCourseReport?.radar || []} />
     </section>
     <NotificationList notifications={data.notifications} title='Notifications' description='Messages addressed to you by your department or the university.' />
   </>;

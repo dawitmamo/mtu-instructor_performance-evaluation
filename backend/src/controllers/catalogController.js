@@ -133,7 +133,9 @@ export const listUsers = asyncHandler(async (req, res) => {
     if (req.user.department) filter.department = req.user.department;
     else filter._id = null;
   }
-  const users = await User.find(filter).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code').sort({ yearLevel: 1, academicStream: 1, lastName: 1 });
+  const users = await User.find(filter).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus reviewedBy reviewedAt createdAt').populate('department', 'name code').populate('reviewedBy', 'firstName lastName').sort({ createdAt: -1, lastName: 1 });
+  const statusOrder = { PENDING: 0, REJECTED: 1, APPROVED: 2 };
+  users.sort((first, second) => (statusOrder[first.registrationStatus || 'APPROVED'] ?? 2) - (statusOrder[second.registrationStatus || 'APPROVED'] ?? 2));
   res.json({ users });
 });
 export const createDepartment = asyncHandler(async (req, res) => res.status(201).json({ department: await Department.create(req.validated.body) }));
@@ -251,6 +253,7 @@ export const updateUser = asyncHandler(async (req, res) => {
   });
   if (usernameConflict) return res.status(409).json({ message: 'Username already registered' });
   if (payload.role === 'SUPER_ADMIN') delete payload.department;
+  if (current.registrationStatus && current.registrationStatus !== 'APPROVED') payload.isActive = false;
   if (payload.role === 'STUDENT') delete payload.employeeNumber;
   if (password) payload.passwordHash = await User.hashPassword(password);
   const unset = {};
@@ -268,8 +271,34 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (!payload.employeeNumber) unset.employeeNumber = 1;
   const update = { $set: payload };
   if (Object.keys(unset).length) update.$unset = unset;
-  const user = await User.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true }).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive').populate('department', 'name code');
+  const user = await User.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true }).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus reviewedBy reviewedAt createdAt').populate('department', 'name code').populate('reviewedBy', 'firstName lastName');
   res.json({ user });
+});
+
+export const reviewRegistration = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) return notFound(res, 'User');
+  if (!['INSTRUCTOR', 'STUDENT'].includes(user.role)) {
+    return res.status(400).json({ message: 'Only student and instructor registrations can be reviewed' });
+  }
+  if (req.user.role === 'HOD' && (!req.user.department || !sameId(user.department, req.user.department))) {
+    return res.status(403).json({ message: 'HOD users can only review registrations in their department' });
+  }
+  const approved = req.validated.body.status === 'APPROVED';
+  user.registrationStatus = req.validated.body.status;
+  user.isActive = approved;
+  user.reviewedBy = req.user.id;
+  user.reviewedAt = new Date();
+  user.tokenVersion += 1;
+  await user.save();
+  const reviewed = await User.findById(user._id)
+    .select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus reviewedBy reviewedAt createdAt')
+    .populate('department', 'name code')
+    .populate('reviewedBy', 'firstName lastName');
+  res.json({
+    user: reviewed,
+    message: approved ? 'Registration verified. The user can now sign in.' : 'Registration rejected.'
+  });
 });
 
 export const upsertExamCommittee = asyncHandler(async (req, res) => {

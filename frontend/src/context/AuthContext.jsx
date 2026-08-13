@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { clearSession, getCurrentUser, login as loginRequest } from '../api/client.js';
+import { clearLegacySharedSession, clearSession, getCurrentUser, hasSession, login as loginRequest } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
@@ -11,7 +11,8 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
     const restore = async () => {
-      if (!localStorage.getItem('accessToken')) { setLoading(false); return; }
+      clearLegacySharedSession();
+      if (!hasSession()) { setLoading(false); return; }
       try {
         const currentUser = await getCurrentUser();
         if (mounted) setUser(currentUser);

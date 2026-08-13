@@ -12,6 +12,7 @@ dotenv.config({ path: path.join(backendRoot, '.env'), override: true });
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: process.env.PORT || 5000,
+  trustProxy: /^\d+$/.test(process.env.TRUST_PROXY || '') ? Number(process.env.TRUST_PROXY) : false,
   mongoUri: process.env.MONGO_URI || '',
   mongoMemoryFallback: process.env.MONGO_MEMORY_FALLBACK !== 'false',
   mongoDataPath: process.env.MONGO_DATA_PATH || '.data/mongodb',
@@ -24,7 +25,16 @@ export const env = {
   googleOAuthClientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '',
   googleOAuthClientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '',
   googleOAuthCallbackUrl: process.env.GOOGLE_OAUTH_CALLBACK_URL || 'http://localhost:5000/api/auth/google/callback',
-  googleOAuthAllowedDomain: process.env.GOOGLE_OAUTH_ALLOWED_DOMAIN || 'mtu.edu.et'
+  googleOAuthAllowedDomain: process.env.GOOGLE_OAUTH_ALLOWED_DOMAIN || 'mtu.edu.et',
+  emailNotificationsEnabled: process.env.EMAIL_NOTIFICATIONS_ENABLED !== 'false',
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: Number(process.env.SMTP_PORT || 587),
+  smtpSecure: process.env.SMTP_SECURE === 'true',
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPassword: process.env.SMTP_PASSWORD || '',
+  smtpFrom: process.env.SMTP_FROM || '',
+  emailMaxAttempts: Number(process.env.EMAIL_MAX_ATTEMPTS || 5),
+  emailRetryIntervalMs: Number(process.env.EMAIL_RETRY_INTERVAL_MS || 60000)
 };
 
 export function validateRuntimeConfig(config = env) {

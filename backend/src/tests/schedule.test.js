@@ -8,6 +8,8 @@ import { Schedule } from '../models/Schedule.js';
 import { Semester } from '../models/Semester.js';
 import { User } from '../models/User.js';
 import { signAccessToken } from '../utils/tokens.js';
+import { Notification } from '../models/Notification.js';
+import { EmailDelivery } from '../models/EmailDelivery.js';
 
 let mongo;
 let app;
@@ -20,6 +22,7 @@ let examCommittee;
 let thirdCommitteeMember;
 let instructor;
 let student;
+let pendingStudent;
 let foreignStudent;
 
 function auth(user) {
@@ -53,20 +56,21 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([Schedule.deleteMany({}), ExamCommittee.deleteMany({}), User.deleteMany({}), Department.deleteMany({}), Semester.deleteMany({})]);
+  await Promise.all([EmailDelivery.deleteMany({}), Notification.deleteMany({}), Schedule.deleteMany({}), ExamCommittee.deleteMany({}), User.deleteMany({}), Department.deleteMany({}), Semester.deleteMany({})]);
   [department, foreignDepartment] = await Department.create([
     { name: 'Electrical and Computer Engineering', code: 'ECE', faculty: 'Engineering' },
     { name: 'Civil Engineering', code: 'CE', faculty: 'Engineering' }
   ]);
   semester = await Semester.create({ name: 'Second Semester', academicYear: '2026/2027', startsAt: new Date('2027-02-01'), endsAt: new Date('2027-06-30'), status: 'OPEN' });
   const passwordHash = await User.hashPassword('Password123!');
-  [hod, courseCommittee, examCommittee, thirdCommitteeMember, instructor, student, foreignStudent] = await User.create([
+  [hod, courseCommittee, examCommittee, thirdCommitteeMember, instructor, student, pendingStudent, foreignStudent] = await User.create([
     { firstName: 'Department', lastName: 'Head', email: 'schedule.hod@mtu.edu.et', passwordHash, role: 'HOD', department: department._id },
     { firstName: 'Course', lastName: 'Committee', email: 'schedule.course@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id, academicStream: 'COMPUTER_ENGINEERING' },
     { firstName: 'Exam', lastName: 'Committee', email: 'schedule.exam@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', committeeRoles: ['COURSE_EXAM_COMMITTEE'], department: department._id, academicStream: 'POWER_ENGINEERING' },
     { firstName: 'Third', lastName: 'Committee', email: 'schedule.third@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, academicStream: 'ELECTRONICS_COMMUNICATION_ENGINEERING' },
     { firstName: 'Regular', lastName: 'Instructor', email: 'schedule.instructor@mtu.edu.et', passwordHash, role: 'INSTRUCTOR', department: department._id, academicStream: 'CONTROL_ENGINEERING' },
     { firstName: 'Department', lastName: 'Student', email: 'schedule.student@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'ECE-SCH-1', yearLevel: 3 },
+    { firstName: 'Pending', lastName: 'Student', email: 'schedule.pending@mtu.edu.et', passwordHash, role: 'STUDENT', department: department._id, studentNumber: 'ECE-SCH-2', yearLevel: 3, registrationStatus: 'PENDING' },
     { firstName: 'Foreign', lastName: 'Student', email: 'schedule.foreign@mtu.edu.et', passwordHash, role: 'STUDENT', department: foreignDepartment._id, studentNumber: 'CE-SCH-1' }
   ]);
   await ExamCommittee.create({
@@ -92,6 +96,14 @@ test('HOD and unified Course and Exam Committee members can prepare or upload de
   await scheduleRequest(instructor, { title: 'Unauthorized Schedule' }).expect(403);
   await scheduleRequest(hod, { title: 'Foreign Schedule', department: foreignDepartment.id }).expect(403);
   expect(await Schedule.countDocuments()).toBe(3);
+  const notifications = await Notification.find({ audience: 'DEPARTMENT', department: department._id });
+  expect(notifications).toHaveLength(3);
+  const deliveries = await EmailDelivery.find({ notification: { $in: notifications.map((notification) => notification._id) } });
+  expect(deliveries).toHaveLength(15);
+  expect(deliveries.some((delivery) => String(delivery.recipient) === student.id)).toBe(true);
+  expect(deliveries.some((delivery) => String(delivery.recipient) === instructor.id)).toBe(true);
+  expect(deliveries.some((delivery) => String(delivery.recipient) === pendingStudent.id)).toBe(false);
+  expect(deliveries.some((delivery) => String(delivery.recipient) === foreignStudent.id)).toBe(false);
 });
 
 test('students and instructors see and download only published schedules in their department', async () => {

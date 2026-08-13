@@ -20,18 +20,19 @@ import { databaseStatus } from './config/db.js';
 
 export function createApp() {
   const app = express();
+  if (env.trustProxy !== false) app.set('trust proxy', env.trustProxy);
   app.use(helmet());
   app.use(cors({ origin: env.clientOrigin, credentials: true }));
-  app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300 }));
+  app.get('/api/health', (req, res) => {
+    const database = databaseStatus();
+    res.status(database.connected ? 200 : 503).json({ status: database.connected ? 'ok' : 'degraded', service: 'uipes-api', database });
+  });
+  app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false }));
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(mongoSanitize());
   app.use(morgan(env.nodeEnv === 'test' ? 'tiny' : 'combined'));
-  app.get('/api/health', (req, res) => {
-    const database = databaseStatus();
-    res.status(database.connected ? 200 : 503).json({ status: database.connected ? 'ok' : 'degraded', service: 'uipes-api', database });
-  });
   app.use('/api/auth', authRoutes);
   app.use('/api', catalogRoutes, evaluationRoutes, reportRoutes, dashboardRoutes, uploadRoutes, streamSelectionRoutes, scheduleRoutes, coursePreferenceRoutes);
   app.use(notFound);

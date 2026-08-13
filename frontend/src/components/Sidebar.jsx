@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, BookMarked, BookOpen, CalendarClock, CalendarDays, CircleUserRound, Database, GraduationCap, LayoutDashboard, Link2, ListOrdered, LogOut, Menu, Moon, Sun, Users, X } from 'lucide-react';
+import { BarChart3, BookMarked, BookOpen, CalendarClock, CalendarDays, CircleUserRound, Database, Gauge, GraduationCap, LayoutDashboard, Link2, ListOrdered, LogOut, Menu, Moon, Sun, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import mtuLogo from '../assets/mtu-logo.png';
 
@@ -12,6 +12,7 @@ const items = [
   ['course-preferences', 'Course Preferences', BookMarked],
   ['course-assignments', 'Course Assignments', BookMarked],
   ['assignments', 'Evaluation Assignments', Link2],
+  ['performance-metrics', 'Performance Metrics', Gauge],
   ['schedules', 'Schedules', CalendarClock],
   ['committees', 'Course & Exam Committee', Users],
   ['stream-selection', 'Stream Selection', ListOrdered],
@@ -24,6 +25,7 @@ function allowed(page, user) {
   if (page === 'profile') return true;
   if (page === 'users') return role === 'SUPER_ADMIN' || role === 'HOD';
   if (page === 'committees') return role === 'HOD' || role === 'SUPER_ADMIN';
+  if (page === 'performance-metrics') return role === 'HOD';
   if (page === 'course-preferences') return role === 'HOD' || role === 'INSTRUCTOR';
   if (page === 'stream-selection') return role === 'STUDENT' || role === 'HOD' || committeeRoles.includes('COURSE_EXAM_COMMITTEE');
   if (role === 'STUDENT') return ['dashboard', 'courses', 'schedules'].includes(page);

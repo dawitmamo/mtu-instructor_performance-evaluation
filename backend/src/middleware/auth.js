@@ -16,7 +16,7 @@ export const authenticate = asyncHandler(async (req, res, next) => {
     return res.status(401).json({ message: 'Invalid or expired session' });
   }
   const user = await User.findById(payload.sub).select('-passwordHash');
-  if (!user || !user.isActive) return res.status(401).json({ message: 'Invalid session' });
+  if (!user || !user.isActive || user.registrationStatus === 'PENDING' || user.registrationStatus === 'REJECTED') return res.status(401).json({ message: 'Invalid session' });
   await syncUserCommitteeMembership(user);
 
   req.user = user;

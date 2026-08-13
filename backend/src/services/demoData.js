@@ -8,6 +8,7 @@ import { InstructorAssignment } from '../models/InstructorAssignment.js';
 import { ExamCommittee } from '../models/ExamCommittee.js';
 import { Evaluation } from '../models/Evaluations.js';
 import { EvaluationTemplate } from '../models/EvaluationTemplate.js';
+import { EmailDelivery } from '../models/EmailDelivery.js';
 import { Notification } from '../models/Notification.js';
 import { Report } from '../models/Report.js';
 import { Schedule } from '../models/Schedule.js';
@@ -20,6 +21,7 @@ import { seedEceSampleData } from './eceSampleData.js';
 function buildTemplate(kind, template) {
   return {
     kind,
+    scopeKey: 'GLOBAL',
     name: template.name,
     description: template.description,
     version: 1,
@@ -27,7 +29,7 @@ function buildTemplate(kind, template) {
     scale: evaluationScale,
     categories: template.categories.map((category) => ({
       name: category.name,
-      questions: category.questions.map((text, index) => ({ text, order: index + 1 }))
+      questions: category.questions.map((text, index) => ({ text, order: index + 1, value: 1 }))
     }))
   };
 }
@@ -67,7 +69,7 @@ async function upsertAssignment({ instructor, course, semester, enrolledStudents
 export async function seedEvaluationTemplates() {
   await Promise.all(Object.entries(evaluationTemplates).map(([kind, template]) =>
     EvaluationTemplate.findOneAndUpdate(
-      { kind, version: 1 },
+      { kind, version: 1, $or: [{ scopeKey: 'GLOBAL' }, { scopeKey: { $exists: false } }] },
       buildTemplate(kind, template),
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     )
@@ -200,7 +202,7 @@ export async function seedSampleAcademicData() {
 export async function seedDemoData({ reset = false } = {}) {
   if (reset) {
     await Promise.all([
-      AuditLog.deleteMany({}), CoursePreference.deleteMany({}), Evaluation.deleteMany({}),
+      AuditLog.deleteMany({}), EmailDelivery.deleteMany({}), CoursePreference.deleteMany({}), Evaluation.deleteMany({}),
       EvaluationTemplate.deleteMany({}), ExamCommittee.deleteMany({}),
       InstructorAssignment.deleteMany({}), Notification.deleteMany({}), Report.deleteMany({}),
       Schedule.deleteMany({}), StreamPreference.deleteMany({}), StreamSelectionRound.deleteMany({}),

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { audit } from '../middleware/audit.js';
 import { validate } from '../middleware/validate.js';
 import { authSchemas } from '../validators/schemas.js';
-import { changePassword, deleteProfilePhoto, forgotPassword, getProfilePhoto, listLoginDepartments, login, me, refresh, register, resetPassword, updateProfile, uploadProfilePhoto } from '../controllers/authController.js';
+import { changePassword, deleteProfilePhoto, forgotPassword, getProfilePhoto, listLoginDepartments, login, me, refresh, register, resetPassword, signup, updateProfile, uploadProfilePhoto } from '../controllers/authController.js';
 
 
 function profilePhotoFilter(req, file, callback) {
@@ -26,13 +27,21 @@ const profilePhotoUpload = multer({
   limits: { fileSize: 2 * 1024 * 1024, files: 1 },
   fileFilter: profilePhotoFilter
 });
+const publicAuthRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many authentication requests. Please try again later.' }
+});
 export const authRoutes = Router();
 authRoutes.get('/departments', listLoginDepartments);
+authRoutes.post('/signup', publicAuthRateLimit, validate(authSchemas.signup), audit('SELF_REGISTRATION_SUBMITTED'), signup);
 authRoutes.post('/register', authenticate, authorize('SUPER_ADMIN', 'HOD'), validate(authSchemas.register), audit('USER_REGISTERED'), register);
-authRoutes.post('/login', validate(authSchemas.login), login);
-authRoutes.post('/refresh', validate(authSchemas.refresh), refresh);
-authRoutes.post('/forgot-password', validate(authSchemas.forgotPassword), forgotPassword);
-authRoutes.post('/reset-password', validate(authSchemas.resetPassword), audit('PASSWORD_RESET'), resetPassword);
+authRoutes.post('/login', publicAuthRateLimit, validate(authSchemas.login), login);
+authRoutes.post('/refresh', publicAuthRateLimit, validate(authSchemas.refresh), refresh);
+authRoutes.post('/forgot-password', publicAuthRateLimit, validate(authSchemas.forgotPassword), forgotPassword);
+authRoutes.post('/reset-password', publicAuthRateLimit, validate(authSchemas.resetPassword), audit('PASSWORD_RESET'), resetPassword);
 authRoutes.post('/change-password', authenticate, validate(authSchemas.changePassword), audit('PASSWORD_CHANGED'), changePassword);
 authRoutes.get('/me', authenticate, me);
 authRoutes.put('/profile', authenticate, validate(authSchemas.profile), audit('PROFILE_UPDATED'), updateProfile);

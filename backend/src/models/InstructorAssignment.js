@@ -26,6 +26,9 @@ const instructorAssignmentSchema = new mongoose.Schema(
 );
 
 instructorAssignmentSchema.index({ instructor: 1, course: 1, semester: 1 }, { unique: true });
+instructorAssignmentSchema.index({ course: 1, status: 1, updatedAt: -1 });
+instructorAssignmentSchema.index({ enrolledStudents: 1, status: 1 });
+instructorAssignmentSchema.index({ peerEvaluators: 1, status: 1 });
 
 export const InstructorAssignment = mongoose.model(
   'InstructorAssignment',

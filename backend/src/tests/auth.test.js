@@ -75,8 +75,50 @@ test('admin-created accounts can sign in immediately with email and password', a
   await request(app).post('/api/auth/login').send({ email: 'managed@mtu.edu.et', password: 'Password123!', userType: 'SUPER_ADMIN' }).expect(200);
 }, 10000);
 
-test('public signup is disabled because administrators manage accounts', async () => {
+test('student self-registration stays pending until the department HOD verifies it', async () => {
+  const [computing, engineering] = await Department.create([
+    { name: 'Computing', code: 'COMP', faculty: 'Technology' },
+    { name: 'Engineering', code: 'ENG', faculty: 'Technology' }
+  ]);
+  const [computingHod, engineeringHod] = await User.create([
+    { firstName: 'Computing', lastName: 'HOD', email: 'computing.hod@mtu.edu.et', passwordHash: await User.hashPassword('Password123!'), role: 'HOD', department: computing._id },
+    { firstName: 'Engineering', lastName: 'HOD', email: 'engineering.hod@mtu.edu.et', passwordHash: await User.hashPassword('Password123!'), role: 'HOD', department: engineering._id }
+  ]);
+
+  const registration = await request(app).post('/api/auth/signup').send({
+    firstName: 'New', lastName: 'Student', email: 'new.student@mtu.edu.et', password: 'Password123!',
+    role: 'STUDENT', department: computing.id, studentNumber: 'COMP-2026-01', yearLevel: 3
+  }).expect(201);
+  expect(registration.body.user.registrationStatus).toBe('PENDING');
+  expect(registration.body.user.role).toBe('STUDENT');
+  expect((await User.findOne({ email: 'new.student@mtu.edu.et' })).isActive).toBe(false);
+
+  const blockedLogin = await request(app).post('/api/auth/login').send({
+    email: 'new.student@mtu.edu.et', password: 'Password123!', userType: 'STUDENT', department: computing.id
+  }).expect(403);
+  expect(blockedLogin.body.message).toMatch(/pending verification/i);
+
+  const foreignToken = (await request(app).post('/api/auth/login').send({ email: engineeringHod.email, password: 'Password123!' })).body.accessToken;
+  await request(app).patch(`/api/users/${registration.body.user.id}/registration`)
+    .set('Authorization', `Bearer ${foreignToken}`).send({ status: 'APPROVED' }).expect(403);
+
+  const hodToken = (await request(app).post('/api/auth/login').send({ email: computingHod.email, password: 'Password123!' })).body.accessToken;
+  const directory = await request(app).get('/api/users').set('Authorization', `Bearer ${hodToken}`).expect(200);
+  expect(directory.body.users).toEqual(expect.arrayContaining([
+    expect.objectContaining({ email: 'new.student@mtu.edu.et', registrationStatus: 'PENDING' })
+  ]));
+  await request(app).patch(`/api/users/${registration.body.user.id}/registration`)
+    .set('Authorization', `Bearer ${hodToken}`).send({ status: 'APPROVED' }).expect(200);
+
+  const approvedLogin = await request(app).post('/api/auth/login').send({
+    email: 'new.student@mtu.edu.et', password: 'Password123!', userType: 'STUDENT', department: computing.id
+  }).expect(200);
+  expect(approvedLogin.body.user.registrationStatus).toBe('APPROVED');
+});
+
+test('public registration accepts only student and instructor roles', async () => {
+  const department = await Department.create({ name: 'Computing', code: 'COMP', faculty: 'Technology' });
   await request(app).post('/api/auth/signup').send({
-    firstName: 'Unsafe', lastName: 'Admin', email: 'unsafe@mtu.edu.et', password: 'Password123!', role: 'SUPER_ADMIN', department: '507f1f77bcf86cd799439011'
-  }).expect(401);
+    firstName: 'Unsafe', lastName: 'Admin', email: 'unsafe@mtu.edu.et', password: 'Password123!', role: 'SUPER_ADMIN', department: department.id
+  }).expect(400);
 });

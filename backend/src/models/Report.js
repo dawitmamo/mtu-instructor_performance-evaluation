@@ -5,6 +5,8 @@ const reportSchema = new mongoose.Schema(
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     semester: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', required: true },
     department: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: true },
+    course: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
+    assignment: { type: mongoose.Schema.Types.ObjectId, ref: 'InstructorAssignment' },
     overallScore: Number,
     categoryScores: [{ category: String, score: Number }],
     strengths: [String],
@@ -43,6 +45,9 @@ const reportSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-reportSchema.index({ instructor: 1, semester: 1 }, { unique: true });
+reportSchema.index(
+  { instructor: 1, semester: 1, assignment: 1 },
+  { unique: true, name: 'unique_instructor_semester_course_report', partialFilterExpression: { assignment: { $type: 'objectId' } } }
+);
 
 export const Report = mongoose.model('Report', reportSchema);

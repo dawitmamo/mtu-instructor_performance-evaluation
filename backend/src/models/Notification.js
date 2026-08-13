@@ -34,5 +34,7 @@ notificationSchema.index(
   { user: 1, relatedAssignment: 1 },
   { unique: true, name: 'unique_user_related_assignment', partialFilterExpression: { relatedAssignment: { $type: 'objectId' } } }
 );
+notificationSchema.index({ user: 1, createdAt: -1 }, { name: 'notification_user_feed' });
+notificationSchema.index({ audience: 1, department: 1, createdAt: -1 }, { name: 'notification_audience_feed' });
 
 export const Notification = mongoose.model('Notification', notificationSchema);

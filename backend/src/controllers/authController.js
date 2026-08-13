@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/tokens.js';
 import { validateUserAcademicProfile } from '../utils/academicProfile.js';
 import { syncUserCommitteeMembership } from '../services/committeeMembership.js';
+import { sendPasswordResetEmail } from '../services/notificationEmail.js';
 
 function publicUser(user) {
   return {
@@ -24,6 +25,9 @@ function publicUser(user) {
     academicStream: user.academicStream,
     phone: user.phone || '',
     bio: user.bio || '',
+    registrationStatus: user.registrationStatus || 'APPROVED',
+    reviewedBy: user.reviewedBy,
+    reviewedAt: user.reviewedAt,
     hasProfilePhoto: Boolean(user.profilePhoto?.contentType),
     profilePhotoUpdatedAt: user.profilePhoto?.updatedAt
   };
@@ -41,7 +45,7 @@ function sameId(first, second) {
   return String(first?._id || first) === String(second?._id || second);
 }
 
-async function createManagedUser(body, password) {
+async function createUser(body, password, registration = {}) {
   body.username ||= body.email.split('@')[0];
   const existing = await User.findOne({ $or: [
     { email: body.email },
@@ -55,9 +59,10 @@ async function createManagedUser(body, password) {
   }
   const user = await User.create({
     ...body,
+    ...registration,
     passwordHash: await User.hashPassword(password)
   });
-  return { user: publicUser(user), message: 'Account created. The user can sign in with the assigned username and password.' };
+  return user;
 }
 
 export const register = asyncHandler(async (req, res) => {
@@ -73,8 +78,25 @@ export const register = asyncHandler(async (req, res) => {
   if (req.user.role === 'HOD' && (!req.user.department || !body.department || !sameId(req.user.department, body.department))) {
     return res.status(403).json({ message: 'HOD users can only create accounts in their department' });
   }
-  const response = await createManagedUser(body, password);
-  return res.status(201).json(response);
+  const user = await createUser(body, password, {
+    registrationStatus: 'APPROVED',
+    reviewedBy: req.user.id,
+    reviewedAt: new Date()
+  });
+  return res.status(201).json({ user: publicUser(user), message: 'Account created. The user can sign in with the assigned username and password.' });
+});
+
+export const signup = asyncHandler(async (req, res) => {
+  const { password, ...body } = req.validated.body;
+  await validateUserAcademicProfile(body);
+  const user = await createUser({ ...body, committeeRoles: [] }, password, {
+    registrationStatus: 'PENDING',
+    isActive: false
+  });
+  return res.status(201).json({
+    user: publicUser(user),
+    message: 'Registration submitted. Your HOD or a Super Admin must verify the account before you can sign in.'
+  });
 });
 
 export const listLoginDepartments = asyncHandler(async (req, res) => {
@@ -93,6 +115,8 @@ export const login = asyncHandler(async (req, res) => {
     user = await User.findOne({ email: legacyEmail }).select('+passwordHash');
   }
   if (!user || !(await user.comparePassword(password))) return res.status(401).json({ message: 'Invalid email, username, or password' });
+  if (user.registrationStatus === 'PENDING') return res.status(403).json({ message: 'Your registration is pending verification by your HOD or Super Admin.' });
+  if (user.registrationStatus === 'REJECTED') return res.status(403).json({ message: 'Your registration was not approved. Contact your HOD or Super Admin.' });
   if (!user.isActive) return res.status(403).json({ message: 'Account disabled' });
   if (!user.username) {
     const legacyUsername = user.email.split('@')[0];
@@ -121,7 +145,7 @@ export const refresh = asyncHandler(async (req, res) => {
     return res.status(401).json({ message: 'Invalid or expired refresh token' });
   }
   const user = await User.findById(payload.sub);
-  if (!user || !user.isActive || user.tokenVersion !== payload.tokenVersion) return res.status(401).json({ message: 'Invalid refresh token' });
+  if (!user || !user.isActive || user.registrationStatus === 'PENDING' || user.registrationStatus === 'REJECTED' || user.tokenVersion !== payload.tokenVersion) return res.status(401).json({ message: 'Invalid refresh token' });
   await syncUserCommitteeMembership(user);
   return res.json(authPayload(user));
 });
@@ -182,21 +206,36 @@ export const deleteProfilePhoto = asyncHandler(async (req, res) => {
   res.json({ user: publicUser(user), message: 'Profile photo removed' });
 });
 export const forgotPassword = asyncHandler(async (req, res) => {
-  const user = await User.findOne({ email: req.validated.body.email });
+  const user = await User.findOne({
+    email: req.validated.body.email,
+    isActive: true,
+    $or: [{ registrationStatus: 'APPROVED' }, { registrationStatus: { $exists: false } }]
+  });
   let resetToken;
   let expiresAt;
+  let delivered = false;
   if (user) {
     resetToken = crypto.randomBytes(32).toString('hex');
     expiresAt = new Date(Date.now() + 1000 * 60 * 30);
     user.resetPasswordTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
     user.resetPasswordExpiresAt = expiresAt;
     await user.save();
+    try {
+      delivered = await sendPasswordResetEmail(user, resetToken);
+    } catch (error) {
+      console.error('Password reset email delivery failed:', error.message);
+    }
+    if (process.env.NODE_ENV === 'production' && !delivered) {
+      user.resetPasswordTokenHash = undefined;
+      user.resetPasswordExpiresAt = undefined;
+      await user.save();
+    }
   }
-  const response = { message: 'If the account exists, password reset instructions have been prepared.' };
+  const response = { message: 'If the account exists, password reset instructions have been sent.' };
   if (process.env.NODE_ENV !== 'production' && resetToken) {
     response.resetToken = resetToken;
     response.expiresAt = expiresAt;
-    response.developmentMessage = 'SMTP delivery is not configured; use this development-only token to complete the reset.';
+    if (!delivered) response.developmentMessage = 'Email delivery is not configured; use this development-only token to complete the reset.';
   }
   return res.json(response);
 });

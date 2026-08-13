@@ -6,19 +6,26 @@ function profileError(message) {
   return error;
 }
 
-async function departmentCode(department) {
+async function departmentProfile(department) {
   if (!department) return null;
-  const record = await Department.findById(department).select('code');
+  const record = await Department.findById(department).select('code name');
   if (!record) throw profileError('Department not found');
-  return record.code;
+  return record;
+}
+
+function isEceDepartment(department) {
+  if (!department) return false;
+  const code = String(department.code || '').trim().toUpperCase();
+  const name = String(department.name || '').trim().toLowerCase().replace(/&/g, 'and').replace(/\s+/g, ' ');
+  return code === 'ECE' || name.includes('electrical and computer engineering');
 }
 
 export async function validateUserAcademicProfile({ role, department, yearLevel, gpa, academicStream }) {
-  const code = await departmentCode(department);
+  const eceDepartment = isEceDepartment(await departmentProfile(department));
   if (role !== 'STUDENT' && (yearLevel !== undefined || gpa !== undefined)) {
     throw profileError('Year level and GPA are available only for student accounts');
   }
-  if (code !== 'ECE') {
+  if (!eceDepartment) {
     if (academicStream) throw profileError('Academic streams are currently available only in Electrical and Computer Engineering');
     return;
   }
@@ -40,8 +47,8 @@ export async function validateUserAcademicProfile({ role, department, yearLevel,
 }
 
 export async function validateCourseAcademicProfile({ department, yearLevel, academicStream }) {
-  const code = await departmentCode(department);
-  if (code !== 'ECE' && academicStream) throw profileError('Academic streams are currently available only in Electrical and Computer Engineering');
-  if (code === 'ECE' && yearLevel >= 4 && !academicStream) throw profileError('Year 4-5 Electrical and Computer Engineering courses must specify a stream');
-  if (code === 'ECE' && yearLevel && yearLevel < 4 && academicStream) throw profileError('Electrical and Computer Engineering stream courses begin in Year 4');
+  const eceDepartment = isEceDepartment(await departmentProfile(department));
+  if (!eceDepartment && academicStream) throw profileError('Academic streams are currently available only in Electrical and Computer Engineering');
+  if (eceDepartment && yearLevel >= 4 && !academicStream) throw profileError('Year 4-5 Electrical and Computer Engineering courses must specify a stream');
+  if (eceDepartment && yearLevel && yearLevel < 4 && academicStream) throw profileError('Electrical and Computer Engineering stream courses begin in Year 4');
 }

@@ -4,6 +4,7 @@ const responseSchema = new mongoose.Schema(
   {
     category: { type: String, required: true },
     question: { type: String, required: true },
+    value: { type: Number, required: true, min: 1, max: 100, default: 1 },
     score: { type: Number, min: 1, max: 5 },
     notApplicable: { type: Boolean, default: false }
   },
@@ -33,6 +34,9 @@ const evaluationSchema = new mongoose.Schema(
   },
   baseOptions
 );
+
+evaluationSchema.index({ instructor: 1, semester: 1, kind: 1 });
+evaluationSchema.index({ department: 1, kind: 1 });
 
 export const Evaluation = mongoose.model('Evaluation', evaluationSchema);
 

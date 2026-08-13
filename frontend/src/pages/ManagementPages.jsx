@@ -8,6 +8,7 @@ export function ReportsPage({ user }) {
   const [assignments, setAssignments] = useState([]);
   const [instructorId, setInstructorId] = useState(selfOnly ? user.id : '');
   const [semesterId, setSemesterId] = useState('');
+  const [assignmentId, setAssignmentId] = useState('');
   const [report, setReport] = useState(null);
   const [finalSummary, setFinalSummary] = useState('');
   const [message, setMessage] = useState('');
@@ -21,19 +22,20 @@ export function ReportsPage({ user }) {
   useEffect(() => {
     if (!instructorId) return;
     setError('');
-    getInstructorReport(instructorId, semesterId).then((loadedReport) => {
+    getInstructorReport(instructorId, semesterId, assignmentId).then((loadedReport) => {
       setReport(loadedReport);
       setSemesterId((current) => current || loadedReport.semester?._id || '');
+      setAssignmentId((current) => current || loadedReport.assignment?._id || '');
       setFinalSummary(loadedReport.report?.finalSummary || '');
     }).catch((requestError) => setError(requestError.response?.data?.message || 'Report could not be loaded.'));
-  }, [instructorId, semesterId]);
+  }, [assignmentId, instructorId, semesterId]);
 
   const instructors = useMemo(() => [...new Map(assignments.filter((row) => row.instructor).map((row) => [row.instructor._id, row.instructor])).values()], [assignments]);
-  const download = async (format) => { setError(''); try { await downloadReport(instructorId, format, semesterId); } catch (requestError) { setError(requestError.response?.data?.message || 'Report could not be downloaded.'); } };
+  const download = async (format) => { setError(''); try { await downloadReport(instructorId, format, semesterId, assignmentId); } catch (requestError) { setError(requestError.response?.data?.message || 'Report could not be downloaded.'); } };
   const publish = async () => {
     setError(''); setMessage('');
     try {
-      const result = await publishInstructorReport(instructorId, finalSummary, semesterId);
+      const result = await publishInstructorReport(instructorId, finalSummary, semesterId, assignmentId);
       setReport((current) => ({ ...current, report: result.report }));
       setMessage(result.message);
     } catch (requestError) {
@@ -41,28 +43,30 @@ export function ReportsPage({ user }) {
     }
   };
   return <section className='panel data-page'>
-    <div className='panel-title'><div><h2>{selfOnly ? 'My Evaluation Report' : 'Reports'}</h2><p>{selfOnly ? 'View and download your own instructor evaluation summary.' : 'Review department instructors and publish final evaluation summaries.'}</p></div><Download size={22} /></div>
-    {!selfOnly && <label className='report-select'><span>Instructor</span><select value={instructorId} onChange={(event) => { setSemesterId(''); setReport(null); setInstructorId(event.target.value); }}>{instructors.map((item) => <option value={item._id} key={item._id}>{item.firstName} {item.lastName}</option>)}</select></label>}
-    {report?.availableSemesters?.length > 0 && <label className='report-select'><span>Semester</span><select value={semesterId} onChange={(event) => setSemesterId(event.target.value)}>{report.availableSemesters.map((item) => <option value={item._id} key={item._id}>{item.name} {item.academicYear}</option>)}</select></label>}
+    <div className='panel-title'><div><h2>{selfOnly ? 'My Course Evaluation Reports' : 'Course Evaluation Reports'}</h2><p>{selfOnly ? 'Select one assigned course to view and download its evaluation report.' : 'Review and publish one independent evaluation report for each instructor course.'}</p></div><Download size={22} /></div>
+    <div className='report-filters'>
+      {!selfOnly && <label className='report-select'><span>Instructor</span><select value={instructorId} onChange={(event) => { setSemesterId(''); setAssignmentId(''); setReport(null); setInstructorId(event.target.value); }}>{instructors.map((item) => <option value={item._id} key={item._id}>{item.firstName} {item.lastName}</option>)}</select></label>}
+      {report?.availableSemesters?.length > 0 && <label className='report-select'><span>Semester</span><select value={semesterId} onChange={(event) => { setAssignmentId(''); setReport(null); setSemesterId(event.target.value); }}>{report.availableSemesters.map((item) => <option value={item._id} key={item._id}>{item.name} {item.academicYear}</option>)}</select></label>}
+      {report?.availableAssignments?.length > 0 && <label className='report-select'><span>Course</span><select value={assignmentId} onChange={(event) => { setReport(null); setAssignmentId(event.target.value); }}>{report.availableAssignments.map((item) => <option value={item._id} key={item._id}>{item.course?.code} - {item.course?.title}</option>)}</select></label>}
+    </div>
     {report && <div className='report-summary'>
       <div><small>Instructor</small><strong>{report.instructor?.firstName} {report.instructor?.lastName}</strong></div>
-      <div><small>Course(s)</small><strong>{report.courseResults?.map((item) => `${item.courseCode} - ${item.courseTitle}`).join(', ') || 'No assigned course'}</strong></div>
-      <div><small>Final result</small><strong>{report.scores?.overall} / 5</strong></div>
-      <div><small>Student 40% ({report.evaluationCounts?.student || 0} submitted)</small><strong>{report.scores?.studentScore} × 40% = {report.scores?.studentWeighted}</strong></div>
-      <div><small>Peer 30% ({report.evaluationCounts?.peer || 0} submitted)</small><strong>{report.scores?.peerScore} × 30% = {report.scores?.peerWeighted}</strong></div>
-      <div><small>HOD 30% ({report.evaluationCounts?.hod || 0} submitted)</small><strong>{report.scores?.hodScore} × 30% = {report.scores?.hodWeighted}</strong></div>
+      <div><small>Course</small><strong>{report.course ? `${report.course.code} - ${report.course.title}` : 'No assigned course'}</strong></div>
+      <div><small>Final result</small><strong>{report.scores?.overall}%</strong></div>
+      <div><small>Student 40% ({report.evaluationCounts?.student || 0} submitted)</small><strong>{report.scores?.studentScore} / 5 × 40% = {report.scores?.studentWeighted}%</strong></div>
+      <div><small>Peer 30% ({report.evaluationCounts?.peer || 0} submitted)</small><strong>{report.scores?.peerScore} / 5 × 30% = {report.scores?.peerWeighted}%</strong></div>
+      <div><small>HOD 30% ({report.evaluationCounts?.hod || 0} submitted)</small><strong>{report.scores?.hodScore} / 5 × 30% = {report.scores?.hodWeighted}%</strong></div>
       <div><small>Semester</small><strong>{report.semester ? `${report.semester.name} ${report.semester.academicYear}` : 'All semesters'}</strong></div>
     </div>}
     {report && report.evaluationCounts?.total === 0 && <div className='error-message'>No submitted evaluations were found for this instructor in the selected semester.</div>}
-    {report?.courseResults?.length > 0 && <div className='key-results'><p>Results by course</p>{report.courseResults.map((item) => <div key={item.assignment}><strong>{item.courseCode} - {item.courseTitle}</strong><code>{item.finalScore} / 5</code></div>)}</div>}
     {report?.report?.categoryScores?.length > 0 && <div className='key-results'><p>Category scores</p>{report.report.categoryScores.map((item) => <div key={item.category}><strong>{item.category}</strong><code>{item.score}</code></div>)}</div>}
     {report?.report?.recommendations?.length > 0 && <div className='key-results'><p>Recommendations</p>{report.report.recommendations.map((item) => <div key={item}><span>{item}</span></div>)}</div>}
     {(user.role === 'HOD' || committeeMember) && !selfOnly && <div className='final-summary-editor'>
-      <label><span>Final summary for the instructor</span><textarea value={finalSummary} onChange={(event) => setFinalSummary(event.target.value)} minLength={10} maxLength={4000} rows={5} placeholder='Summarize the final decision, strengths, required improvements, and follow-up actions.' /></label>
-      <button className='primary-action' type='button' disabled={!instructorId || finalSummary.trim().length < 10} onClick={publish}><Send size={17} /> Publish to instructor</button>
+      <label><span>Final summary for this course report</span><textarea value={finalSummary} onChange={(event) => setFinalSummary(event.target.value)} minLength={10} maxLength={4000} rows={5} placeholder='Summarize the course-specific decision, strengths, required improvements, and follow-up actions.' /></label>
+      <button className='primary-action' type='button' disabled={!instructorId || !assignmentId || finalSummary.trim().length < 10} onClick={publish}><Send size={17} /> Publish course report</button>
     </div>}
     {message && <div className='success-message'>{message}</div>}
-    <div className='summary-actions'><button disabled={!instructorId} onClick={() => download('pdf')}>Download PDF</button><button disabled={!instructorId} onClick={() => download('csv')}>Download CSV</button></div>
+    <div className='summary-actions'><button disabled={!instructorId || !assignmentId} onClick={() => download('pdf')}>Download branded PDF</button><button disabled={!instructorId || !assignmentId} onClick={() => download('csv')}>Download course CSV</button></div>
     {error && <div className='error-message'>{error}</div>}
   </section>;
 }

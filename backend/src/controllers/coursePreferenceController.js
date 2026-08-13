@@ -6,6 +6,7 @@ import { Notification } from '../models/Notification.js';
 import { Semester } from '../models/Semester.js';
 import { User } from '../models/User.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { queueManyNotificationEmails, queueNotificationEmails } from '../services/notificationEmail.js';
 
 function sameId(first, second) {
   return String(first?._id || first) === String(second?._id || second);
@@ -52,7 +53,7 @@ async function notifyManagers({ instructor, department, semester, courses }) {
   if (!recipients.length) return;
   const name = [instructor.firstName, instructor.lastName].filter(Boolean).join(' ');
   const ranked = courses.map((course, index) => `${index + 1}. ${course.code} - ${course.title}`).join('; ');
-  await Notification.insertMany(recipients.map((recipient) => ({
+  const notifications = await Notification.insertMany(recipients.map((recipient) => ({
     user: recipient._id,
     audience: 'USER',
     sender: instructor._id,
@@ -60,6 +61,7 @@ async function notifyManagers({ instructor, department, semester, courses }) {
     message: `${name} submitted course preferences for ${semester.name} ${semester.academicYear}: ${ranked}`,
     type: 'INFO'
   })));
+  await queueManyNotificationEmails(notifications);
 }
 
 export const getInstructorCoursePreferences = asyncHandler(async (req, res) => {
@@ -166,7 +168,7 @@ export const recommendCoursePreference = asyncHandler(async (req, res) => {
     Semester.findById(preference.semester).select('name academicYear')
   ]);
   if (hods.length) {
-    await Notification.insertMany(hods.map((hod) => ({
+    const notifications = await Notification.insertMany(hods.map((hod) => ({
       user: hod._id,
       audience: 'USER',
       sender: req.user._id,
@@ -174,6 +176,7 @@ export const recommendCoursePreference = asyncHandler(async (req, res) => {
       message: `The Course and Exam Committee recommends ${course.code} - ${course.title} for ${instructor?.name || 'the instructor'} in ${semester?.name || 'the selected semester'} ${semester?.academicYear || ''}.`,
       type: 'INFO'
     })));
+    await queueManyNotificationEmails(notifications);
   }
   res.json({
     preference: await populatePreference(CoursePreference.findById(preference._id)),
@@ -234,6 +237,7 @@ export const finalizeCoursePreference = asyncHandler(async (req, res) => {
     message: `Your HOD finalized ${course.code} - ${course.title} as your course for ${semester?.name || 'the semester'} ${semester?.academicYear || ''}.`,
     type: 'INFO'
   });
+  await queueNotificationEmails(notification);
   res.json({
     preference: await populatePreference(CoursePreference.findById(preference._id)),
     assignment,
