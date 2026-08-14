@@ -527,7 +527,9 @@ h3 { margin: 18px 0 8px; font-size: 13px; text-transform: uppercase; letter-spac
 .verification-action.reject { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 .data-row-actions, .registration-review-actions { display: flex !important; align-items: center; gap: 7px !important; }
 .registration-review-actions { flex-wrap: wrap; }
+.review-success { width: 100%; color: #047857 !important; text-transform: none !important; letter-spacing: 0 !important; }
 .review-error { width: 100%; color: #b91c1c !important; text-transform: none !important; letter-spacing: 0 !important; }
+.registration-complete { display: inline-flex; align-items: center; gap: 6px; color: #047857; font-size: 12px; font-weight: 850; }
 .action-row { grid-template-columns: repeat(var(--data-columns, 4), minmax(0, 1fr)) minmax(150px, auto); }
 .auth-mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 24px; padding: 5px; border-radius: 16px; background: var(--primary-soft); }
 .auth-mode-tabs button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-weight: 800; }
@@ -1109,6 +1111,9 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
   .app { grid-template-columns: 1fr; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
   .topbar { top: 8px; }
+  .login-page { grid-template-columns: minmax(0, 1fr); overflow-x: clip; }
+  .login-hero, .login-card { min-width: 0; max-width: 100%; }
+  .login-card { justify-self: stretch; }
 }
 @media (max-width: 760px) {
   .workspace { padding: 14px 14px 30px; }
@@ -1123,14 +1128,17 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
 @media (min-width: 1061px) {
   .sidebar {
     align-self: start;
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
   }
   .sidebar nav {
-    flex: 0 0 auto;
-    overflow: visible;
-    overscroll-behavior: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
   .login-page {
     min-height: 100vh;
@@ -1178,6 +1186,11 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
   .login-card > .demo-hint,
   .login-card > .secure-note { display: none; }
 }
+
+.sidebar nav::-webkit-scrollbar { width: 7px; }
+.sidebar nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar nav::-webkit-scrollbar-thumb { background: rgba(8, 116, 67, .25); border-radius: 999px; }
+.sidebar nav::-webkit-scrollbar-thumb:hover { background: rgba(8, 116, 67, .42); }
 
 .sidebar-menu-button,
 .mobile-sign-out-button {
@@ -1234,6 +1247,14 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
 }
 
 @media (max-width: 600px) {
+  html, body, #root { width: 100%; max-width: 100%; overflow-x: clip; }
+  .app, .workspace, .login-page, .login-hero, .login-card,
+  .topbar, .topbar-heading, .profile, .profile span,
+  .panel, .panel-title, .instructor-summary,
+  .question-row, .question-row > *, .data-row > *, .editable-row > * {
+    min-width: 0;
+    max-width: 100%;
+  }
   .brand span { font-size: 11px; }
   .brand small { display: none; }
   .workspace { gap: 14px; padding: 12px 12px 26px; }
@@ -1241,16 +1262,24 @@ select:focus, input:focus, textarea:focus { box-shadow: 0 0 0 4px rgba(8,116,67,
   .topbar-heading h1 { font-size: clamp(27px, 9vw, 34px); overflow-wrap: anywhere; }
   .topbar-heading p { font-size: 10px; }
   .profile { width: 100%; justify-content: flex-start; }
+  .profile strong, .profile small { overflow-wrap: anywhere; white-space: normal; }
   .panel, .stat-card { border-radius: 20px; }
   .panel { padding: 16px; }
-  .panel-title { gap: 10px; }
+  .panel-title, .instructor-summary { gap: 10px; flex-wrap: wrap; }
   .panel-title h2 { font-size: 18px; }
   .panel-title > svg { padding: 7px; }
+  .likert, .scale-row { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; width: 100%; }
+  .likert:not(.scale-row) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .likert button { min-width: 0; }
   .summary-actions, .summary-actions button, .primary-action { width: 100%; }
   .primary-action { justify-self: stretch; }
   .key-results > div { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
   .login-theme-toggle { right: 12px; }
   .login-theme-toggle span { display: none; }
+  .login-page { width: 100%; overflow-x: clip; }
+  .university-mark { max-width: 100%; }
+  .university-mark > div, .login-brand > div, .login-heading > div { min-width: 0; }
+  .university-mark span, .login-brand span, .login-heading h1, .login-heading p { overflow-wrap: anywhere; }
   .login-card { padding: 22px 18px; }
   .login-card > form { gap: 12px; }
   .hero-badges { gap: 7px; }

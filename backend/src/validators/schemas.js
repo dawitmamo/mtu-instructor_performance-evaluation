@@ -35,14 +35,13 @@ const selfRegistration = z.object({
   firstName: z.string().trim().min(2).max(50),
   lastName: z.string().trim().min(2).max(50),
   email: mtuEmail,
-  password: z.string().min(8),
   role: z.enum(['INSTRUCTOR', 'STUDENT']),
   department: objectId,
   studentNumber: z.string().trim().max(50).optional(),
   yearLevel: optionalYearLevel,
   academicStream: optionalAcademicStream,
   employeeNumber: z.string().trim().max(50).optional()
-}).superRefine((value, context) => {
+}).strict().superRefine((value, context) => {
   if (value.role === 'STUDENT' && !value.studentNumber) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Student number is required', path: ['studentNumber'] });
   }
@@ -52,7 +51,7 @@ const selfRegistration = z.object({
 });
 
 export const authSchemas = {
-  register: z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8) })) }),
+  register: z.object({ body: requireUserDepartment(z.object(managedUserFields).strict()) }),
   signup: z.object({ body: selfRegistration }),
   login: z.object({ body: z.object({
     username: z.string().trim().toLowerCase().min(1).max(100).optional(),
@@ -73,7 +72,7 @@ export const authSchemas = {
   }) })
 };
 
-export const userUpdateSchema = z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, password: z.string().min(8).optional().or(z.literal('')).transform((value) => value || undefined), isActive: z.boolean().optional() })) });
+export const userUpdateSchema = z.object({ body: requireUserDepartment(z.object({ ...managedUserFields, isActive: z.boolean().optional() }).strict()) });
 export const registrationReviewSchema = z.object({ body: z.object({ status: z.enum(['APPROVED', 'REJECTED']) }) });
 export const departmentSchema = z.object({ body: z.object({ name: z.string().min(2), code: z.string().min(2), faculty: z.string().min(2), hod: optionalObjectId }) });
 export const semesterSchema = z.object({ body: z.object({ name: z.string().min(2), academicYear: z.string().min(4), startsAt: z.coerce.date(), endsAt: z.coerce.date(), evaluationOpensAt: z.coerce.date().optional(), evaluationClosesAt: z.coerce.date().optional(), status: z.enum(['DRAFT', 'SCHEDULED', 'OPEN', 'CLOSED', 'ARCHIVED']).optional() }).superRefine((value, context) => {

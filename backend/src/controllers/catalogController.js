@@ -8,6 +8,10 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { User } from '../models/User.js';
 import { validateCourseAcademicProfile, validateUserAcademicProfile } from '../utils/academicProfile.js';
 import { syncEvaluationNotifications } from '../services/evaluationNotifications.js';
+import { Notification } from '../models/Notification.js';
+import { queueManyNotificationEmails, sendAccountApprovedEmail, sendRegistrationRejectedEmail } from '../services/notificationEmail.js';
+import { issuePasswordResetToken } from '../services/passwordResetToken.js';
+import { requestClientOrigin } from '../utils/clientOrigin.js';
 
 const assignmentPopulate = (query) => query
   .populate('instructor', 'firstName lastName email')
@@ -114,14 +118,14 @@ async function validateAssignmentRelations(req, body, currentAssignmentId) {
 }
 
 function sanitizeUserPayload(body) {
-  const { password, ...payload } = body;
+  const payload = { ...body };
   if (!payload.department) delete payload.department;
   if (!payload.studentNumber) delete payload.studentNumber;
   if (!payload.yearLevel) delete payload.yearLevel;
   if (payload.gpa === undefined) delete payload.gpa;
   if (!payload.academicStream) delete payload.academicStream;
   if (!payload.employeeNumber) delete payload.employeeNumber;
-  return { payload, password };
+  return payload;
 }
 
 export const listDepartments = asyncHandler(async (req, res) => res.json({ departments: await Department.find().populate('hod', 'firstName lastName email') }));
@@ -133,7 +137,7 @@ export const listUsers = asyncHandler(async (req, res) => {
     if (req.user.department) filter.department = req.user.department;
     else filter._id = null;
   }
-  const users = await User.find(filter).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus reviewedBy reviewedAt createdAt').populate('department', 'name code').populate('reviewedBy', 'firstName lastName').sort({ createdAt: -1, lastName: 1 });
+  const users = await User.find(filter).select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus requiresPasswordSetup setupEmailSentAt passwordSetupCompletedAt reviewedBy reviewedAt createdAt').populate('department', 'name code').populate('reviewedBy', 'firstName lastName').sort({ createdAt: -1, lastName: 1 });
   const statusOrder = { PENDING: 0, REJECTED: 1, APPROVED: 2 };
   users.sort((first, second) => (statusOrder[first.registrationStatus || 'APPROVED'] ?? 2) - (statusOrder[second.registrationStatus || 'APPROVED'] ?? 2));
   res.json({ users });
@@ -225,7 +229,7 @@ export const updateAssignment = asyncHandler(async (req, res) => {
 export const updateUser = asyncHandler(async (req, res) => {
   const current = await User.findById(req.params.id);
   if (!current) return notFound(res, 'User');
-  const { payload, password } = sanitizeUserPayload(req.validated.body);
+  const payload = sanitizeUserPayload(req.validated.body);
   payload.username ||= current.username || payload.email.split('@')[0];
   await validateUserAcademicProfile(payload);
   if (payload.committeeRoles?.length && payload.role !== 'INSTRUCTOR') {
@@ -244,9 +248,6 @@ export const updateUser = asyncHandler(async (req, res) => {
       return res.status(403).json({ message: 'HOD users can only modify accounts in their department' });
     }
   }
-  if (password && req.user.role !== 'SUPER_ADMIN') {
-    return res.status(403).json({ message: 'Only the Super Admin can reset an existing user password' });
-  }
   const usernameConflict = await User.exists({
     _id: { $ne: current._id },
     $or: [{ username: payload.username }, { email: `${payload.username}@mtu.edu.et` }]
@@ -255,7 +256,6 @@ export const updateUser = asyncHandler(async (req, res) => {
   if (payload.role === 'SUPER_ADMIN') delete payload.department;
   if (current.registrationStatus && current.registrationStatus !== 'APPROVED') payload.isActive = false;
   if (payload.role === 'STUDENT') delete payload.employeeNumber;
-  if (password) payload.passwordHash = await User.hashPassword(password);
   const unset = {};
   if (payload.role === 'SUPER_ADMIN') unset.department = 1;
   if (payload.role !== 'STUDENT') {
@@ -276,7 +276,7 @@ export const updateUser = asyncHandler(async (req, res) => {
 });
 
 export const reviewRegistration = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
+  const user = await User.findById(req.params.id).select('+resetPasswordTokenHash +resetPasswordExpiresAt');
   if (!user) return notFound(res, 'User');
   if (!['INSTRUCTOR', 'STUDENT'].includes(user.role)) {
     return res.status(400).json({ message: 'Only student and instructor registrations can be reviewed' });
@@ -287,17 +287,81 @@ export const reviewRegistration = asyncHandler(async (req, res) => {
   const approved = req.validated.body.status === 'APPROVED';
   user.registrationStatus = req.validated.body.status;
   user.isActive = approved;
+  user.requiresPasswordSetup = approved;
+  user.setupEmailSentAt = undefined;
+  user.welcomeEmailPending = false;
+  user.passwordSetupCompletedAt = undefined;
   user.reviewedBy = req.user.id;
   user.reviewedAt = new Date();
   user.tokenVersion += 1;
+  let setupToken;
+  if (approved) {
+    ({ token: setupToken } = issuePasswordResetToken(user, { ttlMs: 1000 * 60 * 60 * 24 }));
+  } else {
+    user.resetPasswordTokenHash = undefined;
+    user.resetPasswordExpiresAt = undefined;
+  }
   await user.save();
+  let emailDelivered = false;
+  try {
+    emailDelivered = approved
+      ? await sendAccountApprovedEmail(user, setupToken, { clientOrigin: requestClientOrigin(req) })
+      : await sendRegistrationRejectedEmail(user);
+    if (approved && emailDelivered) {
+      user.setupEmailSentAt = new Date();
+      await user.save();
+    }
+  } catch (error) {
+    console.error('Registration status email delivery failed:', error.message);
+  }
   const reviewed = await User.findById(user._id)
-    .select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus reviewedBy reviewedAt createdAt')
+    .select('firstName lastName username email role committeeRoles department studentNumber yearLevel gpa academicStream employeeNumber isActive registrationStatus requiresPasswordSetup setupEmailSentAt passwordSetupCompletedAt reviewedBy reviewedAt createdAt')
     .populate('department', 'name code')
     .populate('reviewedBy', 'firstName lastName');
   res.json({
     user: reviewed,
-    message: approved ? 'Registration verified. The user can now sign in.' : 'Registration rejected.'
+    emailDelivered,
+    message: approved
+      ? `Registration verified.${emailDelivered ? ' A one-time password setup link was emailed.' : ' The setup email could not be delivered; use Send setup link to try again.'}`
+      : `Registration rejected.${emailDelivered ? ' The user was notified by email.' : ' The status email could not be delivered.'}`
+  });
+});
+
+export const sendUserSetupLink = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id).select('+resetPasswordTokenHash +resetPasswordExpiresAt');
+  if (!user) return notFound(res, 'User');
+  if ((user.registrationStatus || 'APPROVED') !== 'APPROVED' || !user.isActive) {
+    return res.status(400).json({ message: 'Setup links can only be sent to approved, active accounts' });
+  }
+  if (req.user.role === 'HOD') {
+    if (!['INSTRUCTOR', 'STUDENT'].includes(user.role) || !req.user.department || !sameId(user.department, req.user.department)) {
+      return res.status(403).json({ message: 'HOD users can only send setup links to students and instructors in their department' });
+    }
+  }
+
+  const previousTokenHash = user.resetPasswordTokenHash;
+  const previousExpiresAt = user.resetPasswordExpiresAt;
+  const { token } = issuePasswordResetToken(user, { ttlMs: 1000 * 60 * 60 * 24 });
+  await user.save();
+  let emailDelivered = false;
+  try {
+    emailDelivered = await sendAccountApprovedEmail(user, token, { resend: true, clientOrigin: requestClientOrigin(req) });
+    if (emailDelivered) user.setupEmailSentAt = new Date();
+  } catch (error) {
+    console.error('Password setup email delivery failed:', error.message);
+  }
+  if (!emailDelivered) {
+    user.resetPasswordTokenHash = previousTokenHash;
+    user.resetPasswordExpiresAt = previousExpiresAt;
+    await user.save();
+  } else {
+    await user.save();
+  }
+  return res.json({
+    emailDelivered,
+    message: emailDelivered
+      ? 'A new one-time password setup link was emailed to the user.'
+      : 'The setup email could not be delivered. Check the email configuration and try again.'
   });
 });
 
@@ -338,6 +402,15 @@ export const upsertExamCommittee = asyncHandler(async (req, res) => {
     .populate('members', 'firstName lastName email employeeNumber academicStream')
     .populate('chair', 'firstName lastName email employeeNumber academicStream')
     .populate('appointedBy', 'firstName lastName email');
+  const notifications = await Notification.insertMany(populated.members.map((member) => ({
+    user: member._id,
+    audience: 'USER',
+    sender: req.user.id,
+    title: 'Course and Exam Committee appointment',
+    message: `You were appointed as ${sameId(member, populated.chair) ? 'chair' : 'a member'} of the Course and Exam Committee for ${populated.semester?.name || 'the selected semester'} ${populated.semester?.academicYear || ''}.`,
+    type: 'INFO'
+  })));
+  await queueManyNotificationEmails(notifications);
   res.status(previous ? 200 : 201).json({ committee: populated });
 });
 

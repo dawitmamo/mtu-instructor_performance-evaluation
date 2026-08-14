@@ -3,7 +3,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import { audit } from '../middleware/audit.js';
 import { validate } from '../middleware/validate.js';
 import { assignmentSchema, courseSchema, departmentSchema, examCommitteeSchema, registrationReviewSchema, semesterSchema, userUpdateSchema } from '../validators/schemas.js';
-import { createAssignment, createCourse, createDepartment, createSemester, listAssignments, listCourses, listDepartments, listExamCommittees, listSemesters, listUsers, reviewRegistration, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser, upsertExamCommittee } from '../controllers/catalogController.js';
+import { createAssignment, createCourse, createDepartment, createSemester, listAssignments, listCourses, listDepartments, listExamCommittees, listSemesters, listUsers, reviewRegistration, sendUserSetupLink, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser, upsertExamCommittee } from '../controllers/catalogController.js';
 
 export const catalogRoutes = Router();
 catalogRoutes.use(authenticate);
@@ -22,6 +22,7 @@ catalogRoutes.post('/assignments', authorize('SUPER_ADMIN', 'HOD', 'COURSE_EXAM_
 catalogRoutes.put('/assignments/:id', authorize('SUPER_ADMIN', 'HOD', 'COURSE_EXAM_COMMITTEE'), validate(assignmentSchema), audit('ASSIGNMENT_UPDATED'), updateAssignment);
 catalogRoutes.put('/users/:id', authorize('SUPER_ADMIN', 'HOD'), validate(userUpdateSchema), audit('USER_UPDATED'), updateUser);
 catalogRoutes.patch('/users/:id/registration', authorize('SUPER_ADMIN', 'HOD'), validate(registrationReviewSchema), audit('REGISTRATION_REVIEWED'), reviewRegistration);
+catalogRoutes.post('/users/:id/setup-link', authorize('SUPER_ADMIN', 'HOD'), audit('PASSWORD_SETUP_LINK_SENT'), sendUserSetupLink);
 catalogRoutes.get('/exam-committees', authorize('SUPER_ADMIN', 'HOD'), listExamCommittees);
 catalogRoutes.post('/exam-committees', authorize('SUPER_ADMIN', 'HOD'), validate(examCommitteeSchema), audit('COURSE_EXAM_COMMITTEE_UPSERTED'), upsertExamCommittee);
 catalogRoutes.post('/exam-committee', authorize('SUPER_ADMIN', 'HOD'), validate(examCommitteeSchema), audit('COURSE_EXAM_COMMITTEE_UPSERTED'), upsertExamCommittee);

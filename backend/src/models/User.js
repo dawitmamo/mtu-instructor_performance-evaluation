@@ -55,6 +55,10 @@ const userSchema = new mongoose.Schema(
       updatedAt: Date
     },
     isActive: { type: Boolean, default: true },
+    requiresPasswordSetup: { type: Boolean, default: false },
+    setupEmailSentAt: Date,
+    welcomeEmailPending: { type: Boolean, default: false },
+    passwordSetupCompletedAt: Date,
     tokenVersion: { type: Number, default: 0 },
     resetPasswordTokenHash: { type: String, select: false },
     resetPasswordExpiresAt: { type: Date, select: false }

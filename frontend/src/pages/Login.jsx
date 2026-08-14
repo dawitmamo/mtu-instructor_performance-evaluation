@@ -15,7 +15,7 @@ const userTypes = [
 ];
 
 const initialRegistration = {
-  firstName: '', lastName: '', email: '', password: '', confirmPassword: '', role: 'STUDENT',
+  firstName: '', lastName: '', email: '', role: 'STUDENT',
   department: '', studentNumber: '', yearLevel: '', academicStream: '', employeeNumber: ''
 };
 
@@ -67,14 +67,9 @@ export function Login() {
     event.preventDefault();
     setError('');
     setMessage('');
-    if (registration.password !== registration.confirmPassword) {
-      setError('The passwords do not match.');
-      return;
-    }
     setBusy(true);
     try {
       const payload = { ...registration };
-      delete payload.confirmPassword;
       if (payload.yearLevel) payload.yearLevel = Number(payload.yearLevel); else delete payload.yearLevel;
       if (!payload.studentNumber) delete payload.studentNumber;
       if (!payload.academicStream) delete payload.academicStream;
@@ -113,7 +108,7 @@ export function Login() {
         <button type='button' className={mode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}><LogIn size={16} /> Sign in</button>
         <button type='button' className={mode === 'register' ? 'active' : ''} onClick={() => setAuthMode('register')}><UserPlus size={16} /> Register</button>
       </div>
-      <div className='login-heading'><span className='login-heading-icon'>{mode === 'login' ? <UserRound size={21} /> : <UserPlus size={21} />}</span><div><h1>{mode === 'login' ? 'Sign in' : 'Create an account'}</h1><p>{mode === 'login' ? 'Use the credentials assigned to your account.' : 'Students and instructors can request access.'}</p></div></div>
+      <div className='login-heading'><span className='login-heading-icon'>{mode === 'login' ? <UserRound size={21} /> : <UserPlus size={21} />}</span><div><h1>{mode === 'login' ? 'Sign in' : 'Request an account'}</h1><p>{mode === 'login' ? 'Use the credentials assigned to your account.' : 'Your password setup link is sent after approval.'}</p></div></div>
       {mode === 'login' ? <>
         <form onSubmit={submitLogin}>
           <label><span>Login as</span><select value={userType} onChange={(event) => { const nextType = event.target.value; setUserType(nextType); if (nextType !== 'SUPER_ADMIN' && !department) setDepartment(departments[0]?._id || ''); setError(''); }} aria-label='Select account role'>{userTypes.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>Select the role assigned to this account.</small></label>
@@ -138,13 +133,11 @@ export function Login() {
         </> : <label><span>Employee number</span><input value={registration.employeeNumber} onChange={(event) => setRegistration({ ...registration, employeeNumber: event.target.value })} placeholder='Staff ID number (optional)' /></label>}
         {registrationNeedsStream && <label><span>Branch / stream</span><select value={registration.academicStream} onChange={(event) => setRegistration({ ...registration, academicStream: event.target.value })} required><option value='' disabled>Select stream</option>{academicStreams.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>}
         <label className='registration-email'><span>MTU email</span><input type='email' value={registration.email} onChange={(event) => setRegistration({ ...registration, email: event.target.value.toLowerCase() })} pattern='.+@mtu[.]edu[.]et' title='Use an @mtu.edu.et email address' autoComplete='email' placeholder='name@mtu.edu.et' required /></label>
-        <label><span>Password</span><input type={showPassword ? 'text' : 'password'} value={registration.password} onChange={(event) => setRegistration({ ...registration, password: event.target.value })} minLength='8' autoComplete='new-password' required /></label>
-        <label><span>Confirm password</span><div className='password-input'><input type={showPassword ? 'text' : 'password'} value={registration.confirmPassword} onChange={(event) => setRegistration({ ...registration, confirmPassword: event.target.value })} minLength='8' autoComplete='new-password' required /><button type='button' onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? 'Hide passwords' : 'Show passwords'}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
         {error && <div className='error-message' role='alert'>{error}</div>}
         {message && <div className='success-message' role='status'><CheckCircle2 size={18} />{message}</div>}
         <button className='primary-action' disabled={busy || !departments.length}><UserPlus size={18} />{busy ? 'Submitting...' : 'Submit registration'}</button>
       </form>}
-      <div className='demo-hint'><ShieldCheck size={18} /><span>New registrations must be verified by the department HOD or a Super Admin before sign-in.</span></div>
+      <div className='demo-hint'><ShieldCheck size={18} /><span>New registrations must be verified by the department HOD or a Super Admin. After approval, use the one-time link sent to your MTU email to create your private password.</span></div>
       <div className='secure-note'><Sparkles size={15} /><span>Modernized for MTU academic evaluation workflows. Designed by Dawit Mamo</span></div>
     </section>
   </main>;

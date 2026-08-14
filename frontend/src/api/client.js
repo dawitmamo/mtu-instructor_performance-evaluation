@@ -116,6 +116,7 @@ export async function updateCourse(id, payload) { return (await api.put(`/course
 export async function updateAssignment(id, payload) { return (await api.put(`/assignments/${id}`, payload)).data.assignment; }
 export async function updateUser(id, payload) { return (await api.put(`/users/${id}`, payload)).data.user; }
 export async function reviewRegistration(id, status) { return (await api.patch(`/users/${id}/registration`, { status })).data; }
+export async function resendSetupLink(id) { return (await api.post(`/users/${id}/setup-link`)).data; }
 export async function getCourses() { return (await api.get('/courses')).data.courses; }
 export async function getAssignments() { return (await api.get('/assignments')).data.assignments; }
 export async function getUsers(role) { return (await api.get('/users', { params: role ? { role } : {} })).data.users; }

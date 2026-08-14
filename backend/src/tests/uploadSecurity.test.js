@@ -131,7 +131,11 @@ test('generic imports register instructors from CSV and readable-text PDF files'
   expect(pdfResult.status).toBe(201);
   expect(pdfResult.body.instructors[0].identifier).toBe('INS-PDF-1');
 
-  const imported = await User.find({ email: { $in: ['csv.instructor@mtu.edu.et', 'pdf.instructor@mtu.edu.et'] } });
+  const imported = await User.find({ email: { $in: ['csv.instructor@mtu.edu.et', 'pdf.instructor@mtu.edu.et'] } })
+    .select('+resetPasswordTokenHash +resetPasswordExpiresAt');
   expect(imported).toHaveLength(2);
   expect(imported.every((user) => user.role === 'INSTRUCTOR' && String(user.department) === department.id)).toBe(true);
+  expect(imported.every((user) => user.requiresPasswordSetup)).toBe(true);
+  expect(imported.every((user) => user.resetPasswordTokenHash?.length === 64 && user.resetPasswordExpiresAt > new Date())).toBe(true);
+  await request(app).post('/api/auth/login').send({ email: 'csv.instructor@mtu.edu.et', password: 'Password123!' }).expect(401);
 }, 15000);

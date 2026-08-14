@@ -10,6 +10,7 @@ import { Course } from '../models/Course.js';
 import { InstructorAssignment } from '../models/InstructorAssignment.js';
 import { ExamCommittee } from '../models/ExamCommittee.js';
 import { Notification } from '../models/Notification.js';
+import { EmailDelivery } from '../models/EmailDelivery.js';
 
 let mongo;
 let app;
@@ -49,7 +50,8 @@ beforeEach(async () => {
     Course.deleteMany({}),
     InstructorAssignment.deleteMany({}),
     ExamCommittee.deleteMany({}),
-    Notification.deleteMany({})
+    Notification.deleteMany({}),
+    EmailDelivery.deleteMany({})
   ]);
 
   [department, foreignDepartment] = await Department.create([
@@ -138,28 +140,31 @@ test('managed accounts require the mtu.edu.et email domain', async () => {
   const response = await request(app)
     .post('/api/auth/register')
     .set(auth(admin))
-    .send({ firstName: 'External', lastName: 'Account', email: 'external@example.com', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ME-EXT-1' })
+    .send({ firstName: 'External', lastName: 'Account', email: 'external@example.com', role: 'STUDENT', department: department.id, studentNumber: 'ME-EXT-1' })
     .expect(400);
   expect(JSON.stringify(response.body)).toContain('@mtu.edu.et');
 });
 
 test('HOD manages only instructors and students in the HOD department', async () => {
   await request(app).post('/api/auth/register').set(auth(hod)).send({
-    firstName: 'Another', lastName: 'Head', username: 'another.hod', email: 'another.hod@mtu.edu.et', password: 'Password123!', role: 'HOD', department: department.id, employeeNumber: 'HOD-2001'
+    firstName: 'Another', lastName: 'Head', username: 'another.hod', email: 'another.hod@mtu.edu.et', role: 'HOD', department: department.id, employeeNumber: 'HOD-2001'
   }).expect(403);
 
   await request(app).post('/api/auth/register').set(auth(hod)).send({
-    firstName: 'Foreign', lastName: 'Student', username: 'foreign.student', email: 'foreign.student@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: foreignDepartment.id, studentNumber: 'CE-2001'
+    firstName: 'Foreign', lastName: 'Student', username: 'foreign.student', email: 'foreign.student@mtu.edu.et', role: 'STUDENT', department: foreignDepartment.id, studentNumber: 'CE-2001'
   }).expect(403);
 
   const created = await request(app).post('/api/auth/register').set(auth(hod)).send({
-    firstName: 'Department', lastName: 'Instructor', username: 'department.instructor', email: 'department.instructor@mtu.edu.et', password: 'Password123!', role: 'INSTRUCTOR', department: department.id, employeeNumber: 'ME-2001'
+    firstName: 'Department', lastName: 'Instructor', username: 'department.instructor', email: 'department.instructor@mtu.edu.et', role: 'INSTRUCTOR', department: department.id, employeeNumber: 'ME-2001'
   }).expect(201);
   expect(created.body.user.username).toBe('department.instructor');
-  await request(app).post('/api/auth/login').send({ email: 'department.instructor@mtu.edu.et', password: 'Password123!', userType: 'INSTRUCTOR' }).expect(200);
+  await request(app).post('/api/auth/login').send({ email: 'department.instructor@mtu.edu.et', password: 'Password123!', userType: 'INSTRUCTOR' }).expect(401);
+  const setup = await request(app).post('/api/auth/forgot-password').send({ email: 'department.instructor@mtu.edu.et' }).expect(200);
+  await request(app).post('/api/auth/reset-password').send({ token: setup.body.resetToken, newPassword: 'DepartmentPassword123!' }).expect(200);
+  await request(app).post('/api/auth/login').send({ email: 'department.instructor@mtu.edu.et', password: 'DepartmentPassword123!', userType: 'INSTRUCTOR' }).expect(200);
 });
 
-test('only Super Admin can reset existing user passwords', async () => {
+test('HOD and Super Admin send audited setup links instead of assigning passwords', async () => {
   const updatePayload = (user, password) => ({
     firstName: user.firstName,
     lastName: user.lastName,
@@ -173,17 +178,18 @@ test('only Super Admin can reset existing user passwords', async () => {
   });
 
   await request(app).put(`/api/users/${instructor.id}`).set(auth(hod))
-    .send(updatePayload(instructor, 'HodReset123!')).expect(403);
+    .send(updatePayload(instructor, 'HodReset123!')).expect(400);
   await request(app).post('/api/auth/login')
     .send({ email: instructor.email, password: 'Password123!', userType: 'INSTRUCTOR' }).expect(200);
 
-  await request(app).put(`/api/users/${foreignInstructor.id}`).set(auth(hod))
-    .send(updatePayload(foreignInstructor, 'BlockedReset123!')).expect(403);
+  await request(app).post(`/api/users/${instructor.id}/setup-link`).set(auth(hod)).expect(200);
+  await request(app).post(`/api/users/${foreignInstructor.id}/setup-link`).set(auth(hod)).expect(403);
+  await request(app).post(`/api/users/${foreignInstructor.id}/setup-link`).set(auth(admin)).expect(200);
 
   await request(app).put(`/api/users/${foreignInstructor.id}`).set(auth(admin))
-    .send(updatePayload(foreignInstructor, 'AdminReset123!')).expect(200);
+    .send(updatePayload(foreignInstructor, 'AdminReset123!')).expect(400);
   await request(app).post('/api/auth/login')
-    .send({ email: foreignInstructor.email, password: 'AdminReset123!', userType: 'INSTRUCTOR' }).expect(200);
+    .send({ email: foreignInstructor.email, password: 'Password123!', userType: 'INSTRUCTOR' }).expect(200);
 });
 
 test('exam committee cannot manage users but can assign HOD-created students to courses', async () => {
@@ -196,25 +202,25 @@ test('exam committee cannot manage users but can assign HOD-created students to 
   await request(app)
     .post('/api/auth/register')
     .set(auth(committee))
-    .send({ firstName: 'New', lastName: 'Student', email: 'new.student@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ME-1001' })
+    .send({ firstName: 'New', lastName: 'Student', email: 'new.student@mtu.edu.et', role: 'STUDENT', department: department.id, studentNumber: 'ME-1001' })
     .expect(403);
 
   const createdStudent = await request(app)
     .post('/api/auth/register')
     .set(auth(hod))
-    .send({ firstName: 'New', lastName: 'Student', username: 'new.student', email: 'new.student@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ME-1001' })
+    .send({ firstName: 'New', lastName: 'Student', username: 'new.student', email: 'new.student@mtu.edu.et', role: 'STUDENT', department: department.id, studentNumber: 'ME-1001' })
     .expect(201);
 
   await request(app)
     .post('/api/auth/register')
     .set(auth(committee))
-    .send({ firstName: 'Other', lastName: 'Student', email: 'other.student@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: foreignDepartment.id, studentNumber: 'CE-1001' })
+    .send({ firstName: 'Other', lastName: 'Student', email: 'other.student@mtu.edu.et', role: 'STUDENT', department: foreignDepartment.id, studentNumber: 'CE-1001' })
     .expect(403);
 
   await request(app)
     .post('/api/auth/register')
     .set(auth(committee))
-    .send({ firstName: 'Fake', lastName: 'Hod', email: 'fake.hod@mtu.edu.et', password: 'Password123!', role: 'HOD', department: department.id, employeeNumber: 'HOD-1001' })
+    .send({ firstName: 'Fake', lastName: 'Hod', email: 'fake.hod@mtu.edu.et', role: 'HOD', department: department.id, employeeNumber: 'HOD-1001' })
     .expect(403);
 
   const courses = await request(app).get('/api/courses').set(auth(committee)).expect(200);
@@ -264,6 +270,10 @@ test('HOD assigns exactly three department instructors as one Course and Exam Co
 
   const appointedUsers = await User.find({ _id: { $in: [instructor.id, delegatedInstructor.id, thirdInstructor.id] } });
   expect(appointedUsers.every((user) => user.committeeRoles.includes('COURSE_EXAM_COMMITTEE'))).toBe(true);
+  const appointmentNotifications = await Notification.find({ title: 'Course and Exam Committee appointment' });
+  expect(appointmentNotifications).toHaveLength(3);
+  expect(appointmentNotifications.find((item) => String(item.user) === instructor.id)?.message).toMatch(/chair/i);
+  expect(await EmailDelivery.countDocuments({ notification: { $in: appointmentNotifications.map((item) => item._id) } })).toBe(3);
 
   await request(app)
     .put(`/api/users/${foreignInstructor.id}`)
@@ -292,12 +302,12 @@ test('HOD manages users while an appointed committee member manages the evaluati
   await request(app)
     .post('/api/auth/register')
     .set(auth(delegatedInstructor))
-    .send({ firstName: 'Eligible', lastName: 'Student', email: 'eligible@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ME-2001' })
+    .send({ firstName: 'Eligible', lastName: 'Student', email: 'eligible@mtu.edu.et', role: 'STUDENT', department: department.id, studentNumber: 'ME-2001' })
     .expect(403);
   const hodCreatedStudent = await request(app)
     .post('/api/auth/register')
     .set(auth(hod))
-    .send({ firstName: 'Eligible', lastName: 'Student', username: 'eligible.student', email: 'eligible@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ME-2001' })
+    .send({ firstName: 'Eligible', lastName: 'Student', username: 'eligible.student', email: 'eligible@mtu.edu.et', role: 'STUDENT', department: department.id, studentNumber: 'ME-2001' })
     .expect(201);
 
   const assignment = await request(app)

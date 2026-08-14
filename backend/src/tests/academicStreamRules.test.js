@@ -36,12 +36,12 @@ beforeEach(async () => {
 });
 
 test('ECE instructors and upper-year students require a valid stream and assignments stay stream matched', async () => {
-  const baseInstructor = { firstName: 'Computer', lastName: 'Instructor', email: 'computer@mtu.edu.et', password: 'Password123!', role: 'INSTRUCTOR', department: department.id };
+  const baseInstructor = { firstName: 'Computer', lastName: 'Instructor', email: 'computer@mtu.edu.et', role: 'INSTRUCTOR', department: department.id };
   await request(app).post('/api/auth/register').set(auth(hod)).send(baseInstructor).expect(400);
   const computerInstructor = await request(app).post('/api/auth/register').set(auth(hod)).send({ ...baseInstructor, academicStream: 'COMPUTER_ENGINEERING' }).expect(201);
   const powerInstructor = await request(app).post('/api/auth/register').set(auth(hod)).send({ ...baseInstructor, firstName: 'Power', email: 'power@mtu.edu.et', academicStream: 'POWER_ENGINEERING' }).expect(201);
 
-  const studentBase = { firstName: 'Upper', lastName: 'Student', email: 'upper@mtu.edu.et', password: 'Password123!', role: 'STUDENT', department: department.id, studentNumber: 'ECE-4001', yearLevel: 4 };
+  const studentBase = { firstName: 'Upper', lastName: 'Student', email: 'upper@mtu.edu.et', role: 'STUDENT', department: department.id, studentNumber: 'ECE-4001', yearLevel: 4 };
   await request(app).post('/api/auth/register').set(auth(hod)).send({ ...studentBase, email: 'missing.year@mtu.edu.et', studentNumber: 'ECE-MISSING', yearLevel: '' }).expect(400);
   await request(app).post('/api/auth/register').set(auth(hod)).send(studentBase).expect(400);
   const student = await request(app).post('/api/auth/register').set(auth(hod)).send({ ...studentBase, academicStream: 'COMPUTER_ENGINEERING' }).expect(201);
@@ -56,10 +56,10 @@ test('ECE instructors and upper-year students require a valid stream and assignm
     .put(`/api/users/${student.body.user.id}`)
     .set(auth(hod))
     .send({ ...studentBase, yearLevel: 3, academicStream: '', gpa: '', isActive: true })
-    .expect(403);
-  const unchangedStudent = await User.findById(student.body.user.id);
-  expect(unchangedStudent.yearLevel).toBe(4);
-  expect(unchangedStudent.academicStream).toBe('COMPUTER_ENGINEERING');
+    .expect(200);
+  const updatedStudent = await User.findById(student.body.user.id);
+  expect(updatedStudent.yearLevel).toBe(3);
+  expect(updatedStudent.academicStream).toBeUndefined();
 });
 
 test('recognizes the full Electrical and Computer Engineering department name and accepts all four streams', async () => {
@@ -73,12 +73,12 @@ test('recognizes the full Electrical and Computer Engineering department name an
   ];
 
   await request(app).post('/api/auth/register').set(auth(hod)).send({
-    firstName: 'Missing', lastName: 'Stream', email: 'missing.stream@mtu.edu.et', password: 'Password123!', role: 'INSTRUCTOR', department: department.id
+    firstName: 'Missing', lastName: 'Stream', email: 'missing.stream@mtu.edu.et', role: 'INSTRUCTOR', department: department.id
   }).expect(400);
 
   for (const [index, academicStream] of streams.entries()) {
     await request(app).post('/api/auth/register').set(auth(hod)).send({
-      firstName: 'Stream', lastName: `Instructor${index + 1}`, email: `stream${index + 1}@mtu.edu.et`, password: 'Password123!',
+      firstName: 'Stream', lastName: `Instructor${index + 1}`, email: `stream${index + 1}@mtu.edu.et`,
       role: 'INSTRUCTOR', department: department.id, academicStream
     }).expect(201);
   }

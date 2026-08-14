@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Eye, EyeOff, FileUp, Pencil, PlusCircle, RefreshCw, Search, X, XCircle } from 'lucide-react';
-import { createAssignment, createCourse, createDepartment, createSemester, createUser, getAssignments, getCourses, getDepartments, getExamCommittees, getSemesters, getUsers, importUsersFile, reviewRegistration, saveExamCommittee, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser } from '../api/client.js';
+import { CheckCircle2, FileUp, Pencil, PlusCircle, RefreshCw, Search, X, XCircle } from 'lucide-react';
+import { createAssignment, createCourse, createDepartment, createSemester, createUser, getAssignments, getCourses, getDepartments, getExamCommittees, getSemesters, getUsers, importUsersFile, resendSetupLink, reviewRegistration, saveExamCommittee, updateAssignment, updateCourse, updateDepartment, updateSemester, updateUser } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { academicStreams, groupStudents, isEceDepartment, streamLabel, studentGroupLabel } from '../utils/academicStreams.js';
 
@@ -36,13 +36,6 @@ function sameId(first, second) {
   return String(idOf(first)) === String(idOf(second));
 }
 
-function generateTemporaryPassword() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const random = new Uint32Array(12);
-  crypto.getRandomValues(random);
-  return `Mtu!${Array.from(random, (value) => alphabet[value % alphabet.length]).join('')}`;
-}
-
 function roleScopedDepartments(departments, user) {
   if (user.role === 'SUPER_ADMIN') return departments;
   return departments.filter((department) => sameId(department._id, user.department));
@@ -54,7 +47,7 @@ function courseGroupLabel(course) {
   return `${department} / ${level}`;
 }
 
-function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, groupBy, filterRows, toolbar, rowActions }) {
+function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, groupBy, filterRows, toolbar, rowActions, autoRefreshMs }) {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
   const refresh = useCallback(async () => {
@@ -63,6 +56,13 @@ function DataPage({ title, subtitle, load, columns, form, canEdit, onEdit, group
     catch (requestError) { setError(requestError.response?.data?.message || 'Data could not be loaded.'); }
   }, [load]);
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!autoRefreshMs) return undefined;
+    const interval = window.setInterval(refresh, autoRefreshMs);
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', refreshWhenVisible); };
+  }, [autoRefreshMs, refresh]);
   const visibleRows = useMemo(() => rows ? (filterRows ? rows.filter(filterRows) : rows) : [], [filterRows, rows]);
   const groupedRows = useMemo(() => {
     if (!groupBy) return [];
@@ -425,7 +425,7 @@ function UserImportForm({ user, departments, refresh }) {
     setBusy(true); setMessage(''); setError('');
     try {
       const result = await importUsersFile(file, role, department);
-      setMessage(`${result.imported} ${role === 'STUDENT' ? 'student' : 'instructor'} account(s) imported successfully.`);
+      setMessage(`${result.imported} ${role === 'STUDENT' ? 'student' : 'instructor'} account(s) imported. ${result.setupEmailsDelivered || 0} new account setup email(s) delivered.`);
       setFile(null);
       setFileKey((current) => current + 1);
       await refresh();
@@ -437,12 +437,12 @@ function UserImportForm({ user, departments, refresh }) {
   };
 
   const columns = role === 'STUDENT'
-    ? 'firstName, lastName, email, studentNumber, yearLevel, gpa, academicStream, password'
-    : 'firstName, lastName, email, employeeNumber, academicStream, password';
+    ? 'firstName, lastName, email, studentNumber, yearLevel, gpa, academicStream'
+    : 'firstName, lastName, email, employeeNumber, academicStream';
   const downloadTemplate = () => {
     const content = role === 'STUDENT'
-      ? 'firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream,password\nHana,Bekele,hana@mtu.edu.et,ECE-3001,3,3.45,,Password123!\n'
-      : 'firstName,lastName,email,employeeNumber,academicStream,password\nHana,Bekele,hana@mtu.edu.et,INS-ECE-01,COMPUTER_ENGINEERING,Password123!\n';
+      ? 'firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream\nHana,Bekele,hana@mtu.edu.et,ECE-3001,3,3.45,\n'
+      : 'firstName,lastName,email,employeeNumber,academicStream\nHana,Bekele,hana@mtu.edu.et,INS-ECE-01,COMPUTER_ENGINEERING\n';
     const url = URL.createObjectURL(new Blob([content], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
@@ -465,7 +465,7 @@ function UserImportForm({ user, departments, refresh }) {
     </form>
     <div className='import-guidance'>
       <div className='import-guidance-heading'><strong>CSV columns</strong><button type='button' className='secondary-action compact-action' onClick={downloadTemplate}>Download CSV template</button></div><code>{columns}</code>
-      <p>The MTU email is the account username used to sign in. Department may be supplied once above or in each file row. Password is optional; new accounts default to <strong>Password123!</strong>. ECE instructors require academicStream, and ECE students require yearLevel.</p>
+      <p>The MTU email is the account username used to sign in. Department may be supplied once above or in each file row. New users receive a one-time email link to create their private password. ECE instructors require academicStream, and ECE students require yearLevel.</p>
       <details><summary>PDF record format</summary><pre>{role === 'STUDENT'
         ? 'First Name: Hana\nLast Name: Bekele\nEmail: hana@mtu.edu.et\nStudent Number: ECE-3001\nYear Level: 3\nGPA: 3.45'
         : 'First Name: Hana\nLast Name: Bekele\nEmail: hana@mtu.edu.et\nEmployee Number: INS-ECE-01\nAcademic Stream: COMPUTER_ENGINEERING'}</pre><p>Repeat the labeled block for each account. Pipe-separated or comma-separated PDF tables with a header row are also accepted.</p></details>
@@ -478,17 +478,37 @@ function UserImportForm({ user, departments, refresh }) {
 function RegistrationReviewActions({ row, refresh }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const status = row.registrationStatus || 'APPROVED';
-  if (status === 'APPROVED') return null;
   const review = async (nextStatus) => {
-    setBusy(nextStatus); setError('');
-    try { await reviewRegistration(row._id, nextStatus); await refresh(); }
-    catch (requestError) { setError(requestError.response?.data?.message || 'Registration could not be reviewed.'); }
+    setBusy(nextStatus); setError(''); setMessage('');
+    try {
+      const result = await reviewRegistration(row._id, nextStatus);
+      setMessage(result.message || `Registration ${nextStatus === 'APPROVED' ? 'approved' : 'rejected'}.`);
+      try { await refresh(); }
+      catch { setError('The registration was reviewed successfully, but the user list could not be refreshed. Reload the page to see the updated status.'); }
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'Registration could not be reviewed. Check the network connection and try again.');
+    }
     finally { setBusy(''); }
   };
+  const sendSetup = async () => {
+    setBusy('SETUP'); setError(''); setMessage('');
+    try {
+      const result = await resendSetupLink(row._id);
+      if (!result.emailDelivered) throw new Error(result.message || 'The setup email could not be delivered.');
+      setMessage(result.message);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'The setup link could not be sent.');
+    } finally { setBusy(''); }
+  };
   return <div className='registration-review-actions'>
-    <button type='button' className='verification-action approve' onClick={() => review('APPROVED')} disabled={Boolean(busy)}><CheckCircle2 size={15} />{busy === 'APPROVED' ? 'Verifying...' : 'Verify'}</button>
+    {status !== 'APPROVED' && <button type='button' className='verification-action approve' onClick={() => review('APPROVED')} disabled={Boolean(busy)}><CheckCircle2 size={15} />{busy === 'APPROVED' ? 'Approving...' : 'Approve & send setup email'}</button>}
     {status === 'PENDING' && <button type='button' className='verification-action reject' onClick={() => review('REJECTED')} disabled={Boolean(busy)}><XCircle size={15} />{busy === 'REJECTED' ? 'Rejecting...' : 'Reject'}</button>}
+    {status === 'APPROVED' && row.requiresPasswordSetup && row.setupEmailSentAt && <span className='registration-complete'><CheckCircle2 size={15} />Approved · setup email sent</span>}
+    {status === 'APPROVED' && row.requiresPasswordSetup && !row.setupEmailSentAt && <button type='button' className='verification-action approve' onClick={sendSetup} disabled={Boolean(busy)}><RefreshCw size={15} />{busy === 'SETUP' ? 'Retrying...' : 'Retry setup email'}</button>}
+    {status === 'APPROVED' && !row.requiresPasswordSetup && <span className='registration-complete'><CheckCircle2 size={15} />Registered · setup completed</span>}
+    {message && <small className='review-success'>{message}</small>}
     {error && <small className='review-error'>{error}</small>}
   </div>;
 }
@@ -497,10 +517,9 @@ export function UsersPage() {
   const { user } = useAuth();
   const editable = canManage('users', user);
   const roles = user.role === 'SUPER_ADMIN' ? allRoles : ['INSTRUCTOR', 'STUDENT'];
-  const initial = { firstName: '', lastName: '', email: '', password: '', role: 'STUDENT', committeeRoles: [], department: '', studentNumber: '', yearLevel: '', gpa: '', academicStream: '', employeeNumber: '', isActive: true };
+  const initial = { firstName: '', lastName: '', email: '', role: 'STUDENT', committeeRoles: [], department: '', studentNumber: '', yearLevel: '', gpa: '', academicStream: '', employeeNumber: '', isActive: true };
   const [values, setValues] = useState(initial);
   const [editingId, setEditingId] = useState('');
-  const [showManagedPassword, setShowManagedPassword] = useState(false);
   const [departments, setDepartments] = useState([]);
   const [userSearch, setUserSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
@@ -510,7 +529,7 @@ export function UsersPage() {
   const isEceUser = isEceDepartment(selectedUserDepartment);
   const streamRequired = isEceUser && (values.role === 'INSTRUCTOR' || (values.role === 'STUDENT' && Number(values.yearLevel) >= 4));
   useEffect(() => { getDepartments().then((loadedDepartments) => { const availableDepartments = roleScopedDepartments(loadedDepartments, user); setDepartments(availableDepartments); setValues((current) => ({ ...current, department: current.department || availableDepartments[0]?._id || '' })); }).catch(() => setDepartments([])); }, [user]);
-  const reset = () => { setValues({ ...initial, department: departments[0]?._id || '' }); setEditingId(''); setShowManagedPassword(false); };
+  const reset = () => { setValues({ ...initial, department: departments[0]?._id || '' }); setEditingId(''); };
   const save = async (refresh) => {
     const payload = { ...values };
     if (!payload.department) delete payload.department;
@@ -519,14 +538,12 @@ export function UsersPage() {
     if (payload.gpa === '') delete payload.gpa; else payload.gpa = Number(payload.gpa);
     if (!payload.academicStream) delete payload.academicStream;
     if (!payload.employeeNumber) delete payload.employeeNumber;
-    if (editingId && !payload.password) delete payload.password;
     if (editingId) await updateUser(editingId, payload); else await createUser(payload);
     reset(); await refresh();
   };
   const edit = (row) => {
     setEditingId(row._id);
-    setShowManagedPassword(false);
-    setValues({ firstName: row.firstName || '', lastName: row.lastName || '', email: row.email || '', password: '', role: row.role || 'STUDENT', committeeRoles: row.committeeRoles || [], department: row.department?._id || '', studentNumber: row.studentNumber || '', yearLevel: row.yearLevel || '', gpa: row.gpa ?? '', academicStream: row.academicStream || '', employeeNumber: row.employeeNumber || '', isActive: row.isActive !== false });
+    setValues({ firstName: row.firstName || '', lastName: row.lastName || '', email: row.email || '', role: row.role || 'STUDENT', committeeRoles: row.committeeRoles || [], department: row.department?._id || '', studentNumber: row.studentNumber || '', yearLevel: row.yearLevel || '', gpa: row.gpa ?? '', academicStream: row.academicStream || '', employeeNumber: row.employeeNumber || '', isActive: row.isActive !== false });
     window.requestAnimationFrame(() => document.getElementById('user-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
   const normalizedSearch = userSearch.trim().toLowerCase();
@@ -562,13 +579,12 @@ export function UsersPage() {
     <label><span>Registration</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value='ALL'>All statuses</option><option value='PENDING'>Pending verification</option><option value='APPROVED'>Approved</option><option value='REJECTED'>Rejected</option></select></label>
     <button type='button' className='secondary-action user-filter-clear' onClick={clearFilters} disabled={!filtersActive}><X size={16} />Clear filters</button>
   </div>;
-  return <DataPage title='Users' subtitle={user.role === 'SUPER_ADMIN' ? 'Review registrations and manage accounts across departments.' : 'Review student and instructor registrations in your department.'} load={getUsers} canEdit={editable} onEdit={edit} filterRows={filterUser} toolbar={directoryToolbar} rowActions={(row, { refresh }) => <RegistrationReviewActions row={row} refresh={refresh} />} groupBy={(row) => row.role === 'STUDENT' ? `${row.department?.name || 'No department'} / ${studentGroupLabel(row)}` : `${row.department?.name || 'University-wide'} / Staff accounts`} form={({ refresh }) => editable && <>
+  return <DataPage title='Users' subtitle={user.role === 'SUPER_ADMIN' ? 'Review registrations and manage accounts across departments.' : 'Review student and instructor registrations in your department.'} load={getUsers} canEdit={editable} onEdit={edit} filterRows={filterUser} toolbar={directoryToolbar} rowActions={(row, { refresh }) => <RegistrationReviewActions row={row} refresh={refresh} />} autoRefreshMs={15000} groupBy={(row) => row.role === 'STUDENT' ? `${row.department?.name || 'No department'} / ${studentGroupLabel(row)}` : `${row.department?.name || 'University-wide'} / Staff accounts`} form={({ refresh }) => editable && <>
     <UserImportForm user={user} departments={departments} refresh={refresh} />
-    <AdminForm id='user-editor' title='User' message={editingId && user.role !== 'SUPER_ADMIN' ? 'The MTU email is the login username. Only the Super Admin can reset an existing password.' : 'The MTU email is the login username. Set an initial password or enter a new password here to reset it.'} editing={Boolean(editingId)} onCancel={reset} onSubmit={() => save(refresh)}>
+    <AdminForm id='user-editor' title='User' message={editingId ? 'Update account details here. Use Send setup link in the user row when the user needs to create or reset a password.' : 'The user receives a one-time link at their MTU email to create a private password.'} editing={Boolean(editingId)} onCancel={reset} onSubmit={() => save(refresh)}>
     <label><span>First name</span><input value={values.firstName} onChange={(event) => setValues({ ...values, firstName: event.target.value })} required /></label>
     <label><span>Last name</span><input value={values.lastName} onChange={(event) => setValues({ ...values, lastName: event.target.value })} required /></label>
     <label className='credential-field'><span>MTU email / username</span><input type='email' value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value.toLowerCase() })} pattern='.+@mtu[.]edu[.]et' title='Use an @mtu.edu.et email address' autoComplete='off' placeholder='name@mtu.edu.et' required /><small>This is the username used on the login page.</small></label>
-    {(!editingId || user.role === 'SUPER_ADMIN') && <label className='credential-field managed-password-field'><span>{editingId ? 'Reset password' : 'Initial password'}</span><div className='password-input'><input type={showManagedPassword ? 'text' : 'password'} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} minLength='8' autoComplete='new-password' required={!editingId} placeholder={editingId ? 'Leave blank to keep current password' : 'At least 8 characters'} /><button type='button' onClick={() => setShowManagedPassword((visible) => !visible)} aria-label={showManagedPassword ? 'Hide password' : 'Show password'} title={showManagedPassword ? 'Hide password' : 'Show password'}>{showManagedPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div><div className='credential-actions'><small>{editingId ? 'Enter a new value to reset the password.' : 'Give this password securely to the user.'}</small><button type='button' className='text-action compact-action' onClick={() => { setValues((current) => ({ ...current, password: generateTemporaryPassword() })); setShowManagedPassword(true); }}><RefreshCw size={14} />Generate password</button></div></label>}
     <label><span>Role</span><select value={values.role} onChange={(event) => { const role = event.target.value; setValues({ ...values, role, studentNumber: role === 'STUDENT' ? values.studentNumber : '', yearLevel: role === 'STUDENT' ? values.yearLevel : '', gpa: role === 'STUDENT' ? values.gpa : '', employeeNumber: role === 'STUDENT' ? '' : values.employeeNumber, academicStream: isEceUser && role === 'INSTRUCTOR' ? values.academicStream : '' }); }}>{roles.map((role) => <option value={role} key={role}>{role.replaceAll('_', ' ')}</option>)}</select></label>
     <label><span>Department</span><select value={values.department} onChange={(event) => { const department = departments.find((item) => sameId(item, event.target.value)); setValues({ ...values, department: event.target.value, academicStream: isEceDepartment(department) ? values.academicStream : '' }); }} required={values.role !== 'SUPER_ADMIN'}>{values.role === 'SUPER_ADMIN' && <option value=''>University-wide</option>}{departments.map((department) => <option value={department._id} key={department._id}>{department.name}</option>)}</select></label>
     {values.role === 'STUDENT' && <label><span>Student number</span><input value={values.studentNumber} onChange={(event) => setValues({ ...values, studentNumber: event.target.value })} required placeholder='Student ID number' /></label>}
@@ -584,6 +600,6 @@ export function UsersPage() {
     { label: 'Login email', value: (row) => row.email },
     { label: 'Role / Duties', value: (row) => [row.role.replaceAll('_', ' '), ...(row.committeeRoles || []).map((role) => role.replaceAll('_', ' '))].join(' / ') },
     { label: 'Department / Cohort', value: (row) => `${row.department?.name || 'University-wide'}${row.role === 'STUDENT' ? ` / ${studentGroupLabel(row)}${typeof row.gpa === 'number' ? ` / GPA ${row.gpa.toFixed(2)}` : ''}` : row.academicStream ? ` / ${streamLabel(row.academicStream)}` : ''}` },
-    { label: 'Registration', value: (row) => (row.registrationStatus || 'APPROVED').replaceAll('_', ' ') }
+    { label: 'Registration', value: (row) => (row.registrationStatus || 'APPROVED') === 'APPROVED' ? (row.requiresPasswordSetup ? (row.setupEmailSentAt ? 'APPROVED / SETUP EMAIL SENT' : 'APPROVED / EMAIL DELIVERY FAILED') : 'REGISTERED / SETUP COMPLETED') : row.registrationStatus.replaceAll('_', ' ') }
   ]} />;
 }

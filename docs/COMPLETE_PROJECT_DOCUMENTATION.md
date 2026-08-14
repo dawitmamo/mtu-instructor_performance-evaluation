@@ -1110,14 +1110,14 @@ Students can also view published department class/exam schedules.
 
 Super Admin can import into any department. HOD and committee members can import only Student or Instructor accounts into their own department. Files may contain no more than 1,000 records. The upload limit is 5 MB at the multipart layer.
 
-Imports validate all rows before database writes begin. Existing accounts with the same role are updated; existing accounts with a different role cause HTTP 409. An omitted password preserves an existing password or assigns `Password123!` to a new account.
+Imports validate all rows before database writes begin. Existing accounts with the same role are updated; existing accounts with a different role cause HTTP 409. Imports never assign or change passwords. Each new account receives a single-use email link for creating a private password, while existing account passwords remain unchanged.
 
 ## 13.2 Student CSV format
 
 ```csv
-firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream,password
-Abel,Tesfaye,abel.tesfaye@mtu.edu.et,ECE-2026-001,3,3.72,,Password123!
-Marta,Kebede,marta.kebede@mtu.edu.et,ECE-2026-002,4,3.58,COMPUTER_ENGINEERING,Password123!
+firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream
+Abel,Tesfaye,abel.tesfaye@mtu.edu.et,ECE-2026-001,3,3.72,
+Marta,Kebede,marta.kebede@mtu.edu.et,ECE-2026-002,4,3.58,COMPUTER_ENGINEERING
 ```
 
 The department may be selected in the form or included as a `department` column containing the department ObjectId. Year must be an integer from 2 to 5 and GPA must be 0 to 4. Year 2-3 ECE students leave stream blank; Year 4-5 students provide a supported stream constant.
@@ -1125,8 +1125,8 @@ The department may be selected in the form or included as a `department` column 
 ## 13.3 Instructor CSV format
 
 ```csv
-firstName,lastName,email,employeeNumber,academicStream,password
-Sara,Mulu,sara.mulu@mtu.edu.et,INS-ECE-101,POWER_ENGINEERING,Password123!
+firstName,lastName,email,employeeNumber,academicStream
+Sara,Mulu,sara.mulu@mtu.edu.et,INS-ECE-101,POWER_ENGINEERING
 ```
 
 Every ECE instructor must provide one academic stream. Instructor imports do not accept student year or GPA.

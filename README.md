@@ -39,7 +39,7 @@ MongoDB: `mongodb://127.0.0.1:27017/instructor_evaluations`
 
 Google OAuth placeholders are included in `.env.example`. Add the Google client ID and secret to your local `.env`, and register `http://localhost:5000/api/auth/google/callback` as an authorized redirect URI in Google Cloud. The secret must remain backend-only; `VITE_GOOGLE_CLIENT_ID` is safe for the browser.
 
-Students and instructors can register from the sign-in page and select the appropriate department, year level, and ECE stream when applicable. A new account remains pending until its department HOD or a Super Admin approves it. Super Admins manage every role across the university; HODs can approve, create, and update only instructors and students in their own department.
+Students and instructors can register from the sign-in page without choosing a password. A new account remains pending until its department HOD or a Super Admin approves it, then the system emails a single-use 24-hour link for the user to create a private password. The Users page marks setup as pending only until that link is used, then displays `Registered / setup completed`. On the user's first successful login, the system sends a one-time congratulations and welcome email. Super Admins manage every role across the university; HODs can approve, create, and update only instructors and students in their own department. Neither role assigns or sees user passwords; both can send a new setup/reset link within their permitted scope.
 
 ### Email Notifications
 
@@ -70,7 +70,7 @@ It creates or updates the Electrical and Computer Engineering 2026/2027 dataset 
 
 Super Admins and HODs can import accounts from the Users page. HOD imports are restricted to instructors and students in the HOD's own department. Upload a CSV or readable-text PDF of up to 5 MB; downloadable templates are provided in the form.
 
-Student columns are `firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream,password`. Instructor columns are `firstName,lastName,email,employeeNumber,academicStream,password`. A `department` column may be included; otherwise the department selected in the form is used. The MTU email is the login username. Password is optional and defaults to `Password123!` for new imports. Existing account passwords remain unchanged when password is omitted.
+Student columns are `firstName,lastName,email,studentNumber,yearLevel,gpa,academicStream`. Instructor columns are `firstName,lastName,email,employeeNumber,academicStream`. A `department` column may be included; otherwise the department selected in the form is used. The MTU email is the login username. New imported accounts receive a one-time password setup link; importing an existing account never changes its password.
 
 All user accounts must use the institutional `@mtu.edu.et` email domain. To update accounts created with an older domain, run `npm run migrate:emails` once.
 
@@ -104,6 +104,7 @@ npm run smoke:deployment
 - `POST /api/auth/forgot-password`
 - `POST /api/auth/reset-password`
 - `POST /api/auth/change-password`
+- `POST /api/users/:id/setup-link`
 - `PUT /api/auth/profile`
 - `POST /api/auth/profile/photo`
 - `DELETE /api/auth/profile/photo`

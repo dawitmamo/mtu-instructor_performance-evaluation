@@ -5,7 +5,9 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/tokens.js';
 import { validateUserAcademicProfile } from '../utils/academicProfile.js';
 import { syncUserCommitteeMembership } from '../services/committeeMembership.js';
-import { sendPasswordResetEmail } from '../services/notificationEmail.js';
+import { sendAccountApprovedEmail, sendPasswordResetEmail, sendRegistrationCompletedEmail } from '../services/notificationEmail.js';
+import { issuePasswordResetToken } from '../services/passwordResetToken.js';
+import { requestClientOrigin } from '../utils/clientOrigin.js';
 
 function publicUser(user) {
   return {
@@ -45,7 +47,7 @@ function sameId(first, second) {
   return String(first?._id || first) === String(second?._id || second);
 }
 
-async function createUser(body, password, registration = {}) {
+async function createUser(body, registration = {}) {
   body.username ||= body.email.split('@')[0];
   const existing = await User.findOne({ $or: [
     { email: body.email },
@@ -60,13 +62,14 @@ async function createUser(body, password, registration = {}) {
   const user = await User.create({
     ...body,
     ...registration,
-    passwordHash: await User.hashPassword(password)
+    requiresPasswordSetup: true,
+    passwordHash: await User.hashPassword(crypto.randomBytes(32).toString('hex'))
   });
   return user;
 }
 
 export const register = asyncHandler(async (req, res) => {
-  const { password, ...body } = req.validated.body;
+  const body = req.validated.body;
   if (body.committeeRoles.length && body.role !== 'INSTRUCTOR') {
     return res.status(400).json({ message: 'Committee duties can only be assigned to instructor accounts' });
   }
@@ -78,24 +81,42 @@ export const register = asyncHandler(async (req, res) => {
   if (req.user.role === 'HOD' && (!req.user.department || !body.department || !sameId(req.user.department, body.department))) {
     return res.status(403).json({ message: 'HOD users can only create accounts in their department' });
   }
-  const user = await createUser(body, password, {
+  const user = await createUser(body, {
     registrationStatus: 'APPROVED',
     reviewedBy: req.user.id,
     reviewedAt: new Date()
   });
-  return res.status(201).json({ user: publicUser(user), message: 'Account created. The user can sign in with the assigned username and password.' });
+  const { token } = issuePasswordResetToken(user, { ttlMs: 1000 * 60 * 60 * 24 });
+  await user.save();
+  let emailDelivered = false;
+  try {
+    emailDelivered = await sendAccountApprovedEmail(user, token, { accountCreated: true, clientOrigin: requestClientOrigin(req) });
+    if (emailDelivered) {
+      user.setupEmailSentAt = new Date();
+      await user.save();
+    }
+  } catch (error) {
+    console.error('New account email delivery failed:', error.message);
+  }
+  return res.status(201).json({
+    user: publicUser(user),
+    emailDelivered,
+    message: emailDelivered
+      ? 'Account created. A secure one-time password setup link was emailed to the user.'
+      : 'Account created, but the setup email could not be delivered. Use Send setup link from the user directory to try again.'
+  });
 });
 
 export const signup = asyncHandler(async (req, res) => {
-  const { password, ...body } = req.validated.body;
+  const body = req.validated.body;
   await validateUserAcademicProfile(body);
-  const user = await createUser({ ...body, committeeRoles: [] }, password, {
+  const user = await createUser({ ...body, committeeRoles: [] }, {
     registrationStatus: 'PENDING',
     isActive: false
   });
   return res.status(201).json({
     user: publicUser(user),
-    message: 'Registration submitted. Your HOD or a Super Admin must verify the account before you can sign in.'
+    message: 'Registration submitted. After approval, a one-time password setup link will be sent to your MTU email.'
   });
 });
 
@@ -133,6 +154,26 @@ export const login = asyncHandler(async (req, res) => {
   if (!userTypeMatches) return res.status(401).json({ message: 'The selected login role does not match this account' });
   if (department && !sameId(department, user.department)) {
     return res.status(401).json({ message: 'The selected department does not match this account' });
+  }
+  if (user.welcomeEmailPending) {
+    const emailClaimed = await User.findOneAndUpdate(
+      { _id: user._id, welcomeEmailPending: true },
+      { $set: { welcomeEmailPending: false } }
+    );
+    if (emailClaimed) {
+      let delivered = false;
+      try {
+        delivered = await sendRegistrationCompletedEmail(user, { clientOrigin: requestClientOrigin(req) });
+      } catch (error) {
+        console.error('Registration completion email delivery failed:', error.message);
+      }
+      if (!delivered) {
+        await User.updateOne(
+          { _id: user._id, welcomeEmailPending: false },
+          { $set: { welcomeEmailPending: true } }
+        );
+      }
+    }
   }
   return res.json(authPayload(user));
 });
@@ -215,13 +256,10 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   let expiresAt;
   let delivered = false;
   if (user) {
-    resetToken = crypto.randomBytes(32).toString('hex');
-    expiresAt = new Date(Date.now() + 1000 * 60 * 30);
-    user.resetPasswordTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.resetPasswordExpiresAt = expiresAt;
+    ({ token: resetToken, expiresAt } = issuePasswordResetToken(user));
     await user.save();
     try {
-      delivered = await sendPasswordResetEmail(user, resetToken);
+      delivered = await sendPasswordResetEmail(user, resetToken, { clientOrigin: requestClientOrigin(req) });
     } catch (error) {
       console.error('Password reset email delivery failed:', error.message);
     }
@@ -248,7 +286,14 @@ export const resetPassword = asyncHandler(async (req, res) => {
     isActive: true
   }).select('+passwordHash +resetPasswordTokenHash +resetPasswordExpiresAt');
   if (!user) return res.status(400).json({ message: 'The password reset token is invalid or expired' });
+  const completedInitialSetup = user.requiresPasswordSetup === true
+    || user.resetPasswordExpiresAt.getTime() > Date.now() + (1000 * 60 * 31);
   user.passwordHash = await User.hashPassword(req.validated.body.newPassword);
+  user.requiresPasswordSetup = false;
+  if (completedInitialSetup) {
+    user.passwordSetupCompletedAt = new Date();
+    user.welcomeEmailPending = true;
+  }
   user.tokenVersion += 1;
   user.resetPasswordTokenHash = undefined;
   user.resetPasswordExpiresAt = undefined;

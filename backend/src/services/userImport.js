@@ -24,8 +24,7 @@ const fieldAliases = new Map([
   ['gpa', 'gpa'],
   ['academicstream', 'academicStream'],
   ['stream', 'academicStream'],
-  ['branch', 'academicStream'],
-  ['password', 'password']
+  ['branch', 'academicStream']
 ]);
 
 function normalizedField(value) {

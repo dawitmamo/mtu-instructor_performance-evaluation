@@ -112,16 +112,61 @@ function emailHtml(notification, recipient) {
   return `<!doctype html><html><body style="margin:0;background:#eef5f1;font-family:Arial,sans-serif;color:#102033"><div style="max-width:640px;margin:28px auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #d9e7df"><div style="padding:22px 26px;background:#087548;color:#fff"><strong style="font-size:20px">Mizan-Tepi University</strong><div style="margin-top:5px;opacity:.86">Academic Management &amp; Instructor Performance Evaluation System</div></div><div style="padding:26px"><p>Hello ${escapeHtml(name)},</p><h2 style="color:#0b4b31">${escapeHtml(notification.title)}</h2><p style="line-height:1.65;white-space:pre-line">${escapeHtml(notification.message)}</p><p style="margin-top:28px"><a href="${escapeHtml(env.clientOrigin)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#12633f;color:#fff;text-decoration:none;font-weight:bold">Open UAMIPES</a></p><p style="margin-top:25px;color:#65758b;font-size:12px">This automated message was sent to your registered MTU email address.</p></div></div></body></html>`;
 }
 
-export async function sendPasswordResetEmail(user, resetToken) {
+export async function sendPasswordResetEmail(user, resetToken, { clientOrigin = env.clientOrigin } = {}) {
   if (!emailDeliveryConfigured()) return false;
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'MTU community member';
-  const resetUrl = `${env.clientOrigin.replace(/\/+$/, '')}/?resetToken=${encodeURIComponent(resetToken)}`;
+  const resetUrl = `${clientOrigin.replace(/\/+$/, '')}/?resetToken=${encodeURIComponent(resetToken)}`;
   await mailTransport().sendMail({
     from: env.smtpFrom,
     to: user.email,
     subject: '[MTU UAMIPES] Reset your password',
     text: `Hello ${name},\n\nUse this secure link to reset your UAMIPES password within 30 minutes:\n${resetUrl}\n\nIf you did not request this change, ignore this email.`,
     html: `<!doctype html><html><body style="margin:0;background:#eef5f1;font-family:Arial,sans-serif;color:#102033"><div style="max-width:640px;margin:28px auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #d9e7df"><div style="padding:22px 26px;background:#087548;color:#fff"><strong style="font-size:20px">Mizan-Tepi University</strong><div style="margin-top:5px;opacity:.86">Academic Management &amp; Instructor Performance Evaluation System</div></div><div style="padding:26px"><p>Hello ${escapeHtml(name)},</p><h2 style="color:#0b4b31">Reset your password</h2><p style="line-height:1.65">Use the secure link below within 30 minutes. The link can be used only once.</p><p style="margin-top:28px"><a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#12633f;color:#fff;text-decoration:none;font-weight:bold">Reset password</a></p><p style="margin-top:25px;color:#65758b;font-size:12px">If you did not request this change, ignore this email.</p></div></div></body></html>`
+  });
+  return true;
+}
+
+export async function sendAccountApprovedEmail(user, resetToken, { accountCreated = false, resend = false, clientOrigin = env.clientOrigin } = {}) {
+  if (!emailDeliveryConfigured()) return false;
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'MTU community member';
+  const loginUrl = clientOrigin.replace(/\/+$/, '');
+  const setupUrl = `${loginUrl}/?resetToken=${encodeURIComponent(resetToken)}`;
+  const role = String(user.role || 'user').replaceAll('_', ' ').toLowerCase();
+  const title = resend ? 'Your UAMIPES password setup link' : accountCreated ? 'Your UAMIPES account is ready' : 'Your registration is approved';
+  const accountMessage = resend ? 'A new one-time password setup link was requested for your account.' : `Your ${role} account is approved and ready to use.`;
+  await mailTransport().sendMail({
+    from: env.smtpFrom,
+    to: user.email,
+    subject: `[MTU UAMIPES] ${title}`,
+    text: `Hello ${name},\n\n${accountMessage}\n\nUsername: ${user.username || user.email}\nLogin: ${loginUrl}\n\nFor security, passwords are never included in email. Use this one-time link within 24 hours to set or change your password:\n${setupUrl}`,
+    html: `<!doctype html><html><body style="margin:0;background:#eef5f1;font-family:Arial,sans-serif;color:#102033"><div style="max-width:640px;margin:28px auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #d9e7df"><div style="padding:22px 26px;background:#087548;color:#fff"><strong style="font-size:20px">Mizan-Tepi University</strong><div style="margin-top:5px;opacity:.86">Academic Management &amp; Instructor Performance Evaluation System</div></div><div style="padding:26px"><p>Hello ${escapeHtml(name)},</p><h2 style="color:#0b4b31">${escapeHtml(title)}</h2><p style="line-height:1.65">${escapeHtml(accountMessage)}</p><p><strong>Username:</strong> ${escapeHtml(user.username || user.email)}</p><p style="line-height:1.65">For security, passwords are never included in email. Use the one-time link below within 24 hours to set or change your password.</p><p style="margin-top:28px"><a href="${escapeHtml(setupUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#12633f;color:#fff;text-decoration:none;font-weight:bold">Set or change password</a></p><p style="margin-top:14px"><a href="${escapeHtml(loginUrl)}" style="color:#12633f">Open UAMIPES sign in</a></p><p style="margin-top:25px;color:#65758b;font-size:12px">This automated message was sent to your registered MTU email address.</p></div></div></body></html>`
+  });
+  return true;
+}
+
+export async function sendRegistrationRejectedEmail(user) {
+  if (!emailDeliveryConfigured()) return false;
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'MTU community member';
+  await mailTransport().sendMail({
+    from: env.smtpFrom,
+    to: user.email,
+    subject: '[MTU UAMIPES] Registration status update',
+    text: `Hello ${name},\n\nYour UAMIPES registration was not approved. Please contact your department HOD or a system administrator if you need assistance.`,
+    html: `<!doctype html><html><body style="margin:0;background:#eef5f1;font-family:Arial,sans-serif;color:#102033"><div style="max-width:640px;margin:28px auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #d9e7df"><div style="padding:22px 26px;background:#087548;color:#fff"><strong style="font-size:20px">Mizan-Tepi University</strong><div style="margin-top:5px;opacity:.86">Academic Management &amp; Instructor Performance Evaluation System</div></div><div style="padding:26px"><p>Hello ${escapeHtml(name)},</p><h2 style="color:#0b4b31">Registration status update</h2><p style="line-height:1.65">Your UAMIPES registration was not approved. Please contact your department HOD or a system administrator if you need assistance.</p></div></div></body></html>`
+  });
+  return true;
+}
+
+export async function sendRegistrationCompletedEmail(user, { clientOrigin = env.clientOrigin } = {}) {
+  if (!emailDeliveryConfigured()) return false;
+  const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || 'MTU community member';
+  const loginUrl = clientOrigin.replace(/\/+$/, '');
+  await mailTransport().sendMail({
+    from: env.smtpFrom,
+    to: user.email,
+    subject: '[MTU UAMIPES] Registration completed — welcome!',
+    text: `Congratulations ${name}!\n\nYour UAMIPES registration and password setup are complete. Thank you for joining the Mizan-Tepi University academic evaluation system.\n\nSign in: ${loginUrl}`,
+    html: `<!doctype html><html><body style="margin:0;background:#eef5f1;font-family:Arial,sans-serif;color:#102033"><div style="max-width:640px;margin:28px auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #d9e7df"><div style="padding:22px 26px;background:#087548;color:#fff"><strong style="font-size:20px">Mizan-Tepi University</strong><div style="margin-top:5px;opacity:.86">Academic Management &amp; Instructor Performance Evaluation System</div></div><div style="padding:26px"><h2 style="color:#0b4b31">Congratulations, ${escapeHtml(name)}!</h2><p style="line-height:1.65">Your registration and password setup are complete. Thank you for joining UAMIPES.</p><p style="margin-top:28px"><a href="${escapeHtml(loginUrl)}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#12633f;color:#fff;text-decoration:none;font-weight:bold">Open UAMIPES</a></p><p style="margin-top:25px;color:#65758b;font-size:12px">You can now sign in with your MTU email and private password.</p></div></div></body></html>`
   });
   return true;
 }
